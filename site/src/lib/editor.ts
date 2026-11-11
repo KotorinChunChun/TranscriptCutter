@@ -244,6 +244,28 @@ function positiveBounds(cue: Cue, from: number, to: number): { start: number; en
   return { start, end };
 }
 
+/** Use the same Unicode timing map in both text selection and the media timeline. */
+export function timeRangesForText(doc: EditorDocument, spans: readonly TextSpan[]): {start:number;end:number}[] {
+  return validatedTextSpans(doc, spans).map(span => positiveBounds(doc.cueById.get(span.cueId)!, span.from, span.to));
+}
+export function textSpansForTime(doc: EditorDocument, start:number, end:number): TextSpan[] {
+  if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end<=start)throw new Error("選択時刻を確認してください。");
+  const spans:TextSpan[]=[];
+  for(const cue of doc.cues){
+    if(cue.end<=start||cue.start>=end)continue;
+    const boundary=(value:number,upper:boolean)=>{let lo=0,hi=cue.text.length;while(lo<hi){const mid=Math.floor((lo+hi)/2),time=timeAt(cue,mid);if(upper?time<=value:time<value)lo=mid+1;else hi=mid;}return lo;};
+    let from=start<=cue.start?0:Math.max(0,boundary(start,true)-1),to=end>=cue.end?cue.text.length:boundary(end,false);
+    while(from>0&&!isTextBoundary(cue.text,from))from--;
+    while(to<cue.text.length&&!isTextBoundary(cue.text,to))to++;
+    if(to>from)spans.push({cueId:cue.id,from,to});
+  }
+  return spans;
+}
+export function deleteTimeRange(doc:EditorDocument,state:EditorState,start:number,end:number):EditorState {
+  const spans=textSpansForTime(doc,start,end);
+  return addCut(state,{start,end,kind:spans.length?"manual":"gap",precision:spans.length?"manual":"gap",text:spans.length?"時間軸から選択":"字幕なし区間",sourceCueIds:[...new Set(spans.map(s=>s.cueId))],spans});
+}
+
 /** Delete only newly selected source characters, including partial tokens. */
 export function deleteTextSpans(doc: EditorDocument, state: EditorState, spans: readonly TextSpan[]): EditorState {
   const requested = validatedTextSpans(doc, spans);
