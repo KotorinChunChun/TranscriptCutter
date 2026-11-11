@@ -14,3 +14,6 @@ test('a collector interrupted during upload cannot silently submit the same mode
 test('remote server reports never label the client PC hardware as the processing machine',()=>{
  const md=report({label:'server-B',executionScope:'remote-server',machine:{hostname:'server-B',cpu:'未取得',memoryBytes:null,os:'未取得'},clientMachine:{cpu:'client CPU'},video:{name:'test'},results:[]});assert.match(md,/別サーバー（接続先のハードウェア情報は未検証）/);assert.match(md,/RAM 未取得/);assert.doesNotMatch(md,/client CPU|RAM 0.0/);
 });
+test('missing server runSeconds is kept distinct from a duration derived from Rust timestamps',()=>{
+ const r=summarize({status:'complete',duration:10,metadata:{startedAt:'2026-11-12T00:00:00Z',completedAt:'2026-11-12T00:00:05Z'}},[],7);assert.equal(r.runSeconds,null);assert.equal(r.derivedRunSeconds,5);assert.equal(r.timingSource,'timestamps');assert.equal(r.realTimeFactor,0.5);
+});

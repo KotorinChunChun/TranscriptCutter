@@ -83,3 +83,5 @@ pwsh -File scripts/release-web.ps1
 指定動画の全文比較にはscripts/benchmark-models.mjsを使います。例：node scripts/benchmark-models.mjs --video 動画の絶対パス --label this-PC-機械名。別PCのサーバーを準備後は--serverで公開済みURLを明示し、--labelと出力先を分けます。Bearer構成だけTC_BENCHMARK_KEY環境変数を使い、信頼LANならキー不要です。
 
 記録はdev/benchmarks配下（Git対象外）にVTT・JSON・report.md・run.jsonを保存します。全区間、auto、話者識別なし、各モデル1回の逐次実行です。初回モデル取得を含み、run秒/送信から回収までのwall秒/待ち/ロード/実デバイスを分けます。同じ--outを指定すると既存ジョブIDから再開し、受付結果が不明な送信は再送しません。サーバー版・動画ハッシュ・ラベルが異なる場合は再開を拒否します。PAUSE_NEW_JOBSファイルを出力先に置くと実行中ジョブを最後まで回収してから新規投入を保留します。
+
+比較後はnode scripts/compare-benchmark-text.mjs --run 記録フォルダー/run.jsonで、共通時刻の字幕抜粋をcomparison-excerpts.mdへ並べられます。正解字幕との精度順位は付けず、未到達の部分結果と字幕なしを区別します。--modelsでモデルIDをカンマ区切りに指定すると、その順序で実行します。

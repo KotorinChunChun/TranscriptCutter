@@ -11,7 +11,7 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $stage 'scripts') -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $taskRoot 'dist-web') -Destination $stage -Recurse
     Copy-Item -LiteralPath (Join-Path $taskRoot 'README.md') -Destination $stage
-    foreach($name in @('serve-web.mjs','speech-connection.mjs','Start-Web.ps1','benchmark-models.mjs')){Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $stage 'scripts')}
+    foreach($name in @('serve-web.mjs','speech-connection.mjs','Start-Web.ps1','benchmark-models.mjs','compare-benchmark-text.mjs')){Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $stage 'scripts')}
     New-Item -ItemType Directory -Path (Join-Path $stage 'web') -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $taskRoot 'web/transcript-utils.mjs') -Destination (Join-Path $stage 'web')
     $destination=Join-Path $taskRoot "release/TranscriptCutter-web-v$version.zip"

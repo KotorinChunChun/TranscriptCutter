@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {RecognitionResults,transcriptionName,recognitionProgress} from '../recognition-state.ts';
+import {RecognitionResults,transcriptionName,recognitionProgress,recognitionElapsed} from '../recognition-state.ts';
 test('incremental snapshots include saved subtitles from running and failed jobs',async()=>{
  let status='running',count=1;const calls=[];
  const reader=new RecognitionResults({request:async()=>({job:{id:'job',status,segmentCount:count}}),segments:async(id,after,known)=>{calls.push([after,known]);return after===0?[{id:1,start:0,end:1,text:'前'}]:[{id:2,start:1,end:2,text:'後'}];}});
@@ -23,4 +23,10 @@ test('names identify engine, model, host and partial output without URL credenti
 test('range progress excludes the skipped prefix of the source video',()=>{assert.deepEqual(recognitionProgress({rangeStart:60,rangeEnd:90,processedUntil:75}),{from:60,to:90,done:75,fraction:0.5});});
 test('a stale network error does not replace the new job status',async()=>{
  let fail;const wait=new Promise((_,reject)=>fail=reject);const reader=new RecognitionResults({request:async()=>wait,segments:async()=>[]});reader.select('old');const pending=reader.refresh();reader.select('new');fail(Error('old offline'));assert.equal(await pending,null);
+});
+test('completed Rust jobs use their finish time and never grow when viewed later',()=>{
+ const job={status:'complete',metadata:{startedAt:'2026-11-12T00:00:00Z',completedAt:'2026-11-12T00:00:05Z'}};
+ assert.deepEqual(recognitionElapsed(job,Date.parse('2026-11-12T01:00:00Z')),{seconds:5,source:'timestamps'});
+ assert.equal(recognitionElapsed({...job,metadata:{...job.metadata,runSeconds:4.9}},0).seconds,4.9);
+ assert.equal(recognitionElapsed({status:'error',metadata:{startedAt:job.metadata.startedAt}},Date.now()).seconds,null);
 });

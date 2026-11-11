@@ -28,3 +28,9 @@ export function recognitionProgress(job:Job|null){
  const from=Number(job.rangeStart??0),to=Number(job.rangeEnd??job.duration??from),done=Math.max(from,Math.min(to,Number(job.processedUntil??from)));
  return {from,to,done,fraction:to>from?Math.max(0,Math.min(1,(done-from)/(to-from))):0};
 }
+export function recognitionElapsed(job:Job|null,now:number):{seconds:number|null;source:'server'|'timestamps'|'live'|'unknown'}{
+ if(!job)return {seconds:null,source:'unknown'};const m=job.metadata??{},start=Date.parse(String(m.startedAt??m.queuedAt??job.createdAt??''));
+ if(!isActiveJob(job)&&typeof m.runSeconds==='number'&&Number.isFinite(m.runSeconds)&&m.runSeconds>=0)return {seconds:m.runSeconds,source:'server'};
+ const end=isActiveJob(job)?now:Date.parse(String(m.finishedAt??m.completedAt??''));
+ return Number.isFinite(start)&&Number.isFinite(end)&&end>=start?{seconds:(end-start)/1000,source:isActiveJob(job)?'live':'timestamps'}:{seconds:null,source:'unknown'};
+}
