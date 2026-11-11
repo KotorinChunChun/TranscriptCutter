@@ -1,1 +1,35 @@
-<!doctype html><html lang="ja"><meta charset="UTF-8"><title>TranscriptCutter</title><body>TranscriptCutter</body></html>
+<!doctype html>
+<html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TranscriptCutter</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<header><strong>TranscriptCutter</strong><button id="open">動画を開く</button><select id="history" aria-label="履歴"><option value="">履歴</option></select><span id="filename">動画未選択</span><button id="settingsToggle">接続設定</button></header>
+<section id="settings" hidden><label>TranscriptionServer <input id="serverUrl" value="http://127.0.0.1:8769"></label><button id="connect">接続</button><span id="connection">未接続</span><p id="tools"></p></section>
+<div id="notice" role="status" aria-live="polite">準備中</div>
+<main>
+ <section class="left">
+  <video id="video" controls preload="metadata"></video>
+  <div class="row"><span id="position">00:00:00.000 / —</span><button id="markStart">現在位置を開始へ</button><button id="markEnd">現在位置を終了へ</button></div>
+  <section class="panel"><h2>カット範囲</h2>
+   <div class="row"><label>開始 <input id="rangeStart" value="0" inputmode="decimal"></label><label>終了 <input id="rangeEnd" value="0" inputmode="decimal"></label><button id="addRange">追加</button></div>
+   <div class="row"><select id="cutMode" aria-label="範囲の扱い"><option value="keep">選択範囲を残す</option><option value="remove">選択範囲を除く</option></select><button id="selectedRanges">選択した字幕から追加</button><button id="clearRanges">範囲をクリア</button></div>
+   <ol id="ranges"></ol><div id="rangeSummary">範囲未指定</div>
+  </section>
+  <section class="panel"><h2>書き出し</h2>
+   <div class="row"><input id="outputDir" aria-label="保存先フォルダー" placeholder="保存先フォルダー"><button id="chooseOutput">保存先を選択</button></div>
+   <div class="row"><label>保存名 <input id="outputName" value="cut"></label><button id="cut">動画を保存（MP4）</button><button id="cancelCut" disabled>書き出し中止</button></div>
+   <progress id="cutProgress" max="100" value="0"></progress><output id="cutResult"></output>
+   <div class="row"><select id="exportFormat" aria-label="字幕形式"><option value="srt">SRT</option><option value="vtt">VTT</option><option value="txt">TXT</option><option value="json">JSON</option></select><select id="exportTimeline" aria-label="字幕の時間軸"><option value="original">元動画の字幕</option><option value="cut">カット後の字幕</option></select><button id="export">字幕を保存</button></div>
+  </section>
+ </section>
+ <section class="right">
+  <section class="panel"><h2>文字起こし</h2>
+   <div class="row"><select id="model" aria-label="認識モデル" disabled></select><select id="device" aria-label="処理方式" disabled></select><label><input type="checkbox" id="diarize" disabled>話者識別</label></div>
+   <div class="row"><button id="transcribe" disabled>文字起こし開始</button><button id="cancelTranscription" disabled>認識中止</button><button id="refreshJob">結果を再取得</button><span id="jobState">未実行</span></div>
+   <progress id="jobProgress" max="100" value="0"></progress><div id="jobDetail"></div>
+  </section>
+  <div class="row toolbar"><input id="search" placeholder="字幕を検索" aria-label="字幕検索"><button id="saveEdits" disabled>字幕の変更を保存</button><span id="dirty"></span></div>
+  <div class="transcript"><table><thead><tr><th><input id="selectPage" type="checkbox" aria-label="表示中の字幕を選択"></th><th>時刻</th><th>話者</th><th>字幕</th></tr></thead><tbody id="segments"></tbody></table><p id="empty">文字起こし結果がここに表示されます。</p></div>
+  <div class="row"><button id="prev">前へ</button><span id="page"></span><button id="next">次へ</button><span id="segmentCount"></span></div>
+ </section>
+</main>
+<dialog id="browser"><div class="dialogHead"><h2 id="browserTitle">動画を選択</h2><button id="closeBrowser">閉じる</button></div><div class="row"><button id="drives">ドライブ</button><button id="up">上へ</button><input id="browsePath" aria-label="フォルダーのパス"><button id="go">移動</button></div><div id="browserError" role="status"></div><div id="entries"></div><button id="useDirectory" hidden>このフォルダーを選択</button></dialog>
+<script type="module" src="app.mjs"></script></body></html>

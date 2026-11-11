@@ -33,6 +33,7 @@ struct Inner {
 struct AppState {
     inner: Arc<Mutex<Inner>>,
     data: PathBuf,
+    project_lock: Mutex<()>,
 }
 #[derive(Clone, Deserialize, Serialize)]
 struct Project {
@@ -50,6 +51,7 @@ fn read_projects(state: &AppState) -> Vec<Project> {
         .unwrap_or_default()
 }
 fn store_project(state: &AppState, project: Project) -> Result<()> {
+    let _guard = state.project_lock.lock().map_err(|e| e.to_string())?;
     let mut list = read_projects(state);
     list.retain(|p| p.path != project.path);
     list.insert(0, project);
@@ -310,6 +312,7 @@ fn main() {
             };
             app.manage(AppState {
                 inner: Arc::new(Mutex::new(Inner::default())),
+                project_lock: Mutex::new(()),
                 data,
             });
             Ok(())
