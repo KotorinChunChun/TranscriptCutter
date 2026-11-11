@@ -87,3 +87,10 @@ pwsh -File scripts/release-web.ps1
 比較後はnode scripts/compare-benchmark-text.mjs --run 記録フォルダー/run.jsonで、共通時刻の字幕抜粋をcomparison-excerpts.mdへ並べられます。正解字幕との精度順位は付けず、未到達の部分結果と字幕なしを区別します。--modelsでモデルIDをカンマ区切りに指定すると、その順序で実行します。
 
 LANへの接続でソケット権限拒否が出る場合、接続キーではなくWeb中継の実行環境を確認します。検証用の制限環境ではLAN通信が禁止されることがあります。通常のユーザーのPowerShellからscripts/Start-Web.ps1を起動してください。アプリはFWやWindowsの実行権限を自動変更しません。処理中の再接続は同じURLの認証更新に限り、処理結果とジョブIDを保持します。
+
+別PCを起動時の既定接続先にする例（URLはシークレットではありません）：
+
+```pwsh
+$env:TC_TRANSCRIPTION_URL='http://192.168.49.105:8769/'
+pwsh -File scripts/Start-Web.ps1
+```

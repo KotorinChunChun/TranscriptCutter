@@ -52,7 +52,7 @@ async function main(){
   const rows=await segments(job.id),wall=(Date.now()-Date.parse(row.uploadStartedAt))/1000;Object.assign(row,summarize(job,rows,wall));
   const name=`${safeName(basename(file).replace(/\.[^.]+$/,''))}__${safeName(label)}__${safeName(model.x_meeting.engineId)}__${safeName(model.x_meeting.modelId)}__${job.status==='complete'?'complete':'partial'}__${job.id.slice(0,8)}`;
   row.details=name+'.json';await writeFile(join(out,row.details),JSON.stringify({job,segments:rows},null,2));if(rows.length){try{row.vtt=name+'.vtt';await writeFile(join(out,row.vtt),makeExport({format:'vtt',segments:rows}).text);}catch(e){delete row.vtt;row.artifactError=String(e);row.error=[row.error,row.artifactError].filter(Boolean).join(' / ');}}
-  await save();console.log(model.id+' 終了 '+job.status+' / '+row.runSeconds+'秒 / 字幕'+rows.length+'件');
+  await save();console.log(model.id+' 終了 '+job.status+' / '+(row.runSeconds??row.derivedRunSeconds??'計測値なし')+'秒'+(row.timingSource==='timestamps'?'（開始/完了時刻差）':'')+' / 字幕'+rows.length+'件');
  }
  run.finishedAt=new Date().toISOString();await save();console.log('全モデルの記録完了: '+out);
 }
