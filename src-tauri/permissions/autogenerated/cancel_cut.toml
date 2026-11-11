@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-cancel-cut"
+description = "Enables the cancel_cut command without any pre-configured scope."
+commands.allow = ["cancel_cut"]
+
+[[permission]]
+identifier = "deny-cancel-cut"
+description = "Denies the cancel_cut command without any pre-configured scope."
+commands.deny = ["cancel_cut"]

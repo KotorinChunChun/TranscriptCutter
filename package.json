@@ -1,0 +1,5 @@
+{
+  "name": "transcript-cutter", "version": "0.2611.0", "private": true, "type": "module",
+  "scripts": { "build:web": "node scripts/build.mjs", "test": "node --test tests/*.test.mjs", "build": "npm run build:web && tauri build --no-bundle", "dev": "npm run build:web && tauri dev" },
+  "devDependencies": { "@tauri-apps/cli": "2.11.4" }
+}

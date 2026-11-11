@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-cut-status"
+description = "Enables the cut_status command without any pre-configured scope."
+commands.allow = ["cut_status"]
+
+[[permission]]
+identifier = "deny-cut-status"
+description = "Denies the cut_status command without any pre-configured scope."
+commands.deny = ["cut_status"]
