@@ -31,6 +31,7 @@ export type VideoExportDialogProps = {
   file: File;
   cuts: readonly CutRecord[];
   subtitleEndMs: number;
+  preserveTail?: boolean;
   onClose: () => void;
   onBusyChange?: (busy: boolean) => void;
 };
@@ -56,7 +57,7 @@ const requestBinaryDownload = (url: string, fileName: string) => {
  * Keep this component mounted while its source File remains selected. Closing
  * hides the dialog and cancels work, but retains a completed binary result.
  */
-export function VideoExportDialog({ open, file, cuts, subtitleEndMs, onClose, onBusyChange }: VideoExportDialogProps) {
+export function VideoExportDialog({ open, file, cuts, subtitleEndMs, onClose, onBusyChange, preserveTail=false }: VideoExportDialogProps) {
   const [inspection, setInspection] = useState<{ source: File; media: Inspection } | null>(null);
   const [inspecting, setInspecting] = useState(false);
   const [inspectionError, setInspectionError] = useState("");
@@ -86,14 +87,14 @@ export function VideoExportDialog({ open, file, cuts, subtitleEndMs, onClose, on
   busyCallback.current = onBusyChange;
   const info = inspection?.source === file ? inspection.media : null;
   const result = completed?.source === file ? completed : null;
-  const signature = useMemo(() => cutKey(cuts, subtitleEndMs), [cuts, subtitleEndMs]);
+  const signature = useMemo(() => JSON.stringify([cutKey(cuts, subtitleEndMs),preserveTail]), [cuts, subtitleEndMs,preserveTail]);
   const resultChanged = !!result && result.cutSignature !== signature;
 
   const planning = useMemo(() => {
     if (!info) return { plan: null, error: "" };
-    try { return { plan: buildMediaCutPlan(cuts, info.durationMs, subtitleEndMs), error: "" }; }
+    try { return { plan: buildMediaCutPlan(cuts, info.durationMs, preserveTail ? undefined : subtitleEndMs), error: "" }; }
     catch (error) { return { plan: null, error: errorText(error) }; }
-  }, [cuts, info, subtitleEndMs]);
+  }, [cuts, info, subtitleEndMs,preserveTail]);
   const plan = planning.plan;
   const trailingDurationMs = info ? Math.max(0, info.durationMs - subtitleEndMs) : 0;
   const shorterThanSubtitles = !!info && subtitleEndMs > info.durationMs + 1000;
@@ -214,6 +215,7 @@ export function VideoExportDialog({ open, file, cuts, subtitleEndMs, onClose, on
         file: source,
         cuts: snapshot,
         subtitleEndMs: snapshotSubtitleEndMs,
+        preserveTail,
         format: selectedFormat,
         signal: controller.signal,
         onProgress: update => {
@@ -295,7 +297,7 @@ export function VideoExportDialog({ open, file, cuts, subtitleEndMs, onClose, on
     {inspectionError && <div className="error-banner" role="alert"><AlertCircle size={17}/><div><p>{inspectionError}</p><button className="button secondary small" onClick={() => setInspectionRetry(n => n + 1)}><RotateCcw size={13}/>もう一度確認</button></div></div>}
     {info && <>
       {plan && <div className="video-export-summary" aria-label="カット後の長さ"><div><span>元ファイル</span><strong>{formatTime(plan.durationMs, true)}</strong></div><ChevronRight size={16}/><div><span>{plan.cuts.length}区間をカット</span><strong>{(plan.cutDurationMs / 1000).toFixed(2)}<small>秒</small></strong></div><ChevronRight size={16}/><div className="video-export-duration"><span>カット後（計算値）</span><strong>{formatTime(plan.outputDurationMs, true)}</strong></div></div>}
-      {plan && <div className="inline-notice" aria-label="VTT終了後の自動カット"><Scissors size={15}/><span>VTTの最終終了時刻：<strong>{formatTime(subtitleEndMs, true)}</strong>。{trailingDurationMs > 0 ? <>ここから元ファイルの終了 {formatTime(info.durationMs, true)} までの {(trailingDurationMs / 1000).toFixed(3)}秒を自動カットします。上のカット時間にも含まれています。</> : <>元ファイルに、この時刻を超える区間はありません。</>}</span></div>}
+      {plan && <div className="inline-notice" aria-label="VTT終了後の自動カット"><Scissors size={15}/><span>{preserveTail ? "VTT終了後も残します。VTTの最終終了時刻：" : "VTTの最終終了時刻："}<strong>{formatTime(subtitleEndMs, true)}</strong>。{preserveTail ? <>末尾は保持し、明示したカット区間だけを除きます。</> : trailingDurationMs > 0 ? <>ここから元ファイルの終了 {formatTime(info.durationMs, true)} までの {(trailingDurationMs / 1000).toFixed(3)}秒を自動カットします。上のカット時間にも含まれています。</> : <>元ファイルに、この時刻を超える区間はありません。</>}</span></div>}
       {planning.error && <p className="field-error" role="alert">{planning.error}</p>}
       {plan?.outputDurationMs === 0 && <p className="field-error" role="alert">ファイルの全区間がカット対象です。カット記録を修正して、残す区間を作ってください。</p>}
       <div className="form-field"><label className="form-label" htmlFor="video-export-format">書き出す形式</label><select id="video-export-format" className="select-input" value={format} disabled={rendering || saving} onChange={event => setFormat(event.target.value as MediaFormat)}><option value="mp4" disabled={!info.mp4Supported}>{info.hasVideo ? `MP4 — H.264${info.hasAudio ? " / AAC" : ""}` : "M4A — AAC"}{!info.mp4Supported ? "（このブラウザでは利用不可）" : ""}</option><option value="webm" disabled={!info.webmSupported}>{info.hasVideo ? `WebM — ${(info.webmVideoCodec ?? "vp9").toUpperCase()}${info.hasAudio ? " / Opus" : ""}` : "WebM — Opus"}{!info.webmSupported ? "（このブラウザでは利用不可）" : ""}</option></select><p className="form-help">カットした区間を詰めて、残す映像・音声を1本のファイルにします。再エンコードにより画質・音質・容量は変わります。</p><p className="form-help">表示はカット区間から計算した長さです。音声の圧縮処理による余白で、実ファイルはわずかに長くなる場合があります。</p></div>

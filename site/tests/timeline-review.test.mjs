@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {reviewGaps,thumbnailTimes,compareFrames,visualVerdict} from '../src/lib/timeline-review.ts';
-import {buildDocument,createEditorState,deleteTimeRange,getDeletedSpans,timeRangesForText,exportProjectJson,importProjectJson,normalizeCuts} from '../src/lib/editor.ts';
+import {buildDocument,createEditorState,deleteTimeRange,getDeletedSpans,timeRangesForText,exportProjectJson,importProjectJson,normalizeCuts,getEffectiveCuts,exportCutJson} from '../src/lib/editor.ts';
 const cue=(id,start,end,text='0123456789')=>({id,start,end,text,speaker:'話者1',sourceIds:[id],sourceCount:1});
 test('gap display uses union of source cues and includes leading/internal/trailing gaps',()=>{
  const gaps=reviewGaps([cue('a',2000,5000),cue('b',4000,6000),cue('c',16000,18000)],20000);
@@ -27,4 +27,10 @@ test('time selection never splits emoji surrogate pairs and rejects invalid boun
 });
 test('visual decisions distinguish static frames, visible changes and incomplete observations',()=>{
  const a=new Uint8ClampedArray(400).fill(255),b=a.slice();assert.equal(visualVerdict([compareFrames(a,b)],true).kind,'small');b.fill(0,0,20);assert.equal(visualVerdict([compareFrames(a,b)],true).kind,'changed');assert.equal(visualVerdict([],true).kind,'unknown');assert.equal(visualVerdict([compareFrames(a,b)],false).kind,'unknown');assert.throws(()=>compareFrames(a,new Uint8ClampedArray(4)));
+});
+test('a reviewed tail can be preserved and resumed while old projects keep the automatic tail policy',()=>{
+ const doc=buildDocument([cue('a',0,5000)]),original=createEditorState(),keep={...original,keepTail:true};
+ assert.equal(getEffectiveCuts(doc,original,10000).length,1);assert.equal(getEffectiveCuts(doc,keep,10000).length,0);
+ const project=importProjectJson(exportProjectJson(doc,keep,{sourceFile:'test.vtt',mediaDurationMs:10000}));assert.equal(project.state.keepTail,true);
+ const cuts=JSON.parse(exportCutJson(doc,keep,{sourceFile:'test.vtt',mediaDurationMs:10000}));assert.equal(cuts.truncateAfterMs,null);assert.equal(cuts.trailingMediaPolicy,'preserve');assert.equal(cuts.keepRanges[0].end,10000);
 });

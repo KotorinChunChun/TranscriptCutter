@@ -18,6 +18,7 @@ export interface CutRecord {
   text?: string; sourceCueIds: string[]; tokenIds?: string[]; lineIds?: string[]; spans?: TextSpan[];
 }
 export interface EditorState {
+  keepTail?: boolean;
   cuts: CutRecord[]; aliases: Record<string, string>; speakerOverrides: Record<string, string | null>; forcedJoins: string[];
   /** Immutable document revisions travel with the same undo/redo snapshot as cuts. */
   cueRevisions?: RevisedCue[];
@@ -840,7 +841,7 @@ export function getTranscriptTailCut(doc: EditorDocument, mediaDurationMs?: numb
 
 /** Effective media cuts include the automatic tail without mutating history. */
 export function getEffectiveCuts(doc: EditorDocument, state: EditorState, mediaDurationMs?: number): CutRecord[] {
-  const tail = getTranscriptTailCut(doc, mediaDurationMs);
+  const tail = state.keepTail ? null : getTranscriptTailCut(doc, mediaDurationMs);
   return tail ? [...state.cuts, tail] : state.cuts;
 }
 
@@ -937,12 +938,12 @@ function exportDuration(doc: EditorDocument, options: Partial<ExportOptions>): n
 export function exportCutJson(doc: EditorDocument, state: EditorState, options: ExportOptions): string {
   const mediaDuration = knownMediaDuration(options), mediaDurationKnown = mediaDuration !== undefined;
   const durationMs = exportDuration(doc, options);
-  const keepUntilMs = Math.min(doc.durationMs, durationMs);
+  const keepUntilMs = state.keepTail ? durationMs : Math.min(doc.durationMs, durationMs);
   const effectiveCuts = getEffectiveCuts(doc, state, mediaDuration);
-  const tail = getTranscriptTailCut(doc, mediaDuration);
+  const tail = state.keepTail ? null : getTranscriptTailCut(doc, mediaDuration);
   const cutRanges = normalizeCuts(effectiveCuts, durationMs);
-  return JSON.stringify({ schemaVersion: 1, kind: "vtt-dialogue-cut-list", timebase: "milliseconds", timeline: "original", sourceFile: options.sourceFile, durationMs, mediaDurationMs: mediaDuration ?? null, subtitleEndMs: doc.durationMs, truncateAfterMs: doc.durationMs, trailingMediaPolicy: "discard", coveredUntilMs: durationMs, keepRangesComplete: true, cutRangesComplete: mediaDurationKnown, totalCutDurationMsKnown: mediaDurationKnown, subtitleExtendsPastMediaEnd: mediaDurationKnown && doc.durationMs > durationMs, outOfBoundsEditIds: state.cuts.filter(c => c.end > durationMs).map(c => c.id),
-    timingNotes: ["すべての start/end は元メディアの先頭を 0 とするミリ秒です。", "単語・フィラー・複数行字幕内の行の時刻は、文字数による推定です。音声との強制アラインメントは行っていません。", "cue は元 VTT の字幕区間、audio は音声解析、gap は字幕のない区間を示します。字幕のない区間が無音とは限りません。", "truncateAfterMs（入力VTTの最も遅い終了時刻）以降のメディアはカット済みとして切り捨てます。途中の字幕の空白や先頭部分には、この末尾ルールを適用しません。", "keepRanges は残す区間の完全な指定です。元メディアがこれより短い場合は実際の長さで切り詰め、映像・音声を付け足さないでください。", "cutRanges は重複を統合したカット区間です。editIds は edits（個々の編集）または automaticCuts（自動末尾カット）を参照します。自動カットは取り消し履歴には入りません。", "mediaDurationMs が null の場合も truncateAfterMs 以降を必ず切り捨ててください。末尾の実際の終了時刻が未確認のため、cutRangesComplete と totalCutDurationMsKnown は false となり、cutRanges と totalCutDurationMs は coveredUntilMs までの値です。実メディアの長さを確認後に末尾区間を補ってください。"],
+  return JSON.stringify({ schemaVersion: 1, kind: "vtt-dialogue-cut-list", timebase: "milliseconds", timeline: "original", sourceFile: options.sourceFile, durationMs, mediaDurationMs: mediaDuration ?? null, subtitleEndMs: doc.durationMs, truncateAfterMs: state.keepTail ? null : doc.durationMs, trailingMediaPolicy: state.keepTail ? "preserve" : "discard", coveredUntilMs: durationMs, keepRangesComplete: !state.keepTail || mediaDurationKnown, cutRangesComplete: mediaDurationKnown, totalCutDurationMsKnown: mediaDurationKnown, subtitleExtendsPastMediaEnd: mediaDurationKnown && doc.durationMs > durationMs, outOfBoundsEditIds: state.cuts.filter(c => c.end > durationMs).map(c => c.id),
+    timingNotes: ["すべての start/end は元メディアの先頭を 0 とするミリ秒です。", "単語・フィラー・複数行字幕内の行の時刻は、文字数による推定です。音声との強制アラインメントは行っていません。", "cue は元 VTT の字幕区間、audio は音声解析、gap は字幕のない区間を示します。字幕のない区間が無音とは限りません。", state.keepTail ? "末尾保持が選択されています。字幕の終了後も、明示的に削除した範囲以外の映像・音声を残します。" : "truncateAfterMs（入力VTTの最も遅い終了時刻）以降のメディアはカット済みとして切り捨てます。途中の字幕の空白や先頭部分には、この末尾ルールを適用しません。", "keepRanges は残す区間の完全な指定です。元メディアがこれより短い場合は実際の長さで切り詰め、映像・音声を付け足さないでください。", "cutRanges は重複を統合したカット区間です。editIds は edits（個々の編集）または automaticCuts（自動末尾カット）を参照します。自動カットは取り消し履歴には入りません。", state.keepTail ? "メディア全長が未確認の場合、末尾を含む残す範囲を確定できません。実メディアの全長に合わせて保持範囲を補ってください。" : "mediaDurationMs が null の場合も truncateAfterMs 以降を必ず切り捨ててください。末尾の実際の終了時刻が未確認のため、cutRangesComplete と totalCutDurationMsKnown は false となり、cutRanges と totalCutDurationMs は coveredUntilMs までの値です。実メディアの長さを確認後に末尾区間を補ってください。"],
     totalCutDurationMs: cutRanges.reduce((sum, r) => sum + r.durationMs, 0), cutRanges, keepRanges: getKeepRanges(state.cuts, keepUntilMs), edits: state.cuts.map(cloneCut), automaticCuts: tail ? [cloneCut(tail)] : [], speakerAliases: { ...state.aliases }, speakerOverrides: { ...state.speakerOverrides }, forcedJoins: [...state.forcedJoins] }, null, 2);
 }
 
@@ -958,7 +959,7 @@ export function exportCutCsv(doc: EditorDocument, state: EditorState, options: P
 export function exportProjectJson(doc: EditorDocument, state: EditorState, options: ExportOptions): string {
   const resolved = resolveEditorDocument(doc, state);
   const { cueRevisions: _cueRevisions, ...persistedState } = state;
-  return JSON.stringify({ schemaVersion: 1, kind: "vtt-dialogue-project", sourceFile: options.sourceFile, mediaDurationMs: knownMediaDuration(options), truncateAfterMs: resolved.durationMs, trailingMediaPolicy: "discard", fillerTerms: resolved.fillerTerms, cues: resolved.cues, state: persistedState }, null, 2);
+  return JSON.stringify({ schemaVersion: 1, kind: "vtt-dialogue-project", sourceFile: options.sourceFile, mediaDurationMs: knownMediaDuration(options), truncateAfterMs: state.keepTail ? null : resolved.durationMs, trailingMediaPolicy: state.keepTail ? "preserve" : "discard", fillerTerms: resolved.fillerTerms, cues: resolved.cues, state: persistedState }, null, 2);
 }
 
 function record(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
@@ -987,6 +988,7 @@ export function importProjectJson(raw: string): { doc: EditorDocument; state: Ed
   const rawState = value.state;
   if (!Array.isArray(rawState.cuts) || rawState.cuts.length > 200000 || !strings(rawState.forcedJoins)) throw new Error("編集履歴の形式が正しくありません。");
   let state = createEditorState();
+  if(rawState.keepTail!==undefined){if(typeof rawState.keepTail!=="boolean")throw new Error("末尾設定が正しくありません。");state.keepTail=rawState.keepTail;}
   state.aliases = safeDictionary(rawState.aliases) as Record<string, string>;
   state.speakerOverrides = safeDictionary(rawState.speakerOverrides, true);
   if (Object.keys(state.speakerOverrides).some(id => !doc.cueById.has(id))) throw new Error("存在しない字幕への話者設定があります。");

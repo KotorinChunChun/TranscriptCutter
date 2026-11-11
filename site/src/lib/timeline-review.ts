@@ -3,11 +3,11 @@ export type TimeRange={start:number;end:number};
 export type ReviewGap=TimeRange & {id:string;nextCueId:string|null;trailing:boolean};
 export function reviewGaps(cues:readonly Cue[],duration?:number):ReviewGap[]{
  if(!cues.length)return [];
- const sorted=[...cues].sort((a,b)=>a.start-b.start||a.end-b.end),last=Math.max(...cues.map(c=>c.end));
- const ranges:TimeRange[]=[];let cursor=0;const limit=duration??last;
- for(const cue of sorted){if(cue.start>cursor)ranges.push({start:cursor,end:Math.min(cue.start,limit)});cursor=Math.max(cursor,cue.end);if(cursor>=limit)break;}
- if(cursor<limit)ranges.push({start:cursor,end:limit});
- return ranges.filter(g=>g.end>g.start).map(g=>({...g,id:`gap-${g.start}-${g.end}`,nextCueId:sorted.find(c=>c.start>=g.end)?.id??null,trailing:g.start>=last}));
+ const sorted=[...cues].sort((a,b)=>a.start-b.start||a.end-b.end),last=cues.reduce((n,c)=>Math.max(n,c.end),0);
+ const ranges:(TimeRange&{nextCueId:string|null})[]=[];let cursor=0;const limit=duration??last;
+ for(const cue of sorted){if(cue.start>cursor)ranges.push({start:cursor,end:Math.min(cue.start,limit),nextCueId:cue.id});cursor=Math.max(cursor,cue.end);if(cursor>=limit)break;}
+ if(cursor<limit)ranges.push({start:cursor,end:limit,nextCueId:null});
+ return ranges.filter(g=>g.end>g.start).map(g=>({...g,id:`gap-${g.start}-${g.end}`,trailing:g.start>=last}));
 }
 export function thumbnailTimes(range:TimeRange):number[]{
  if(!Number.isSafeInteger(range.start)||!Number.isSafeInteger(range.end)||range.start<0||range.end<=range.start)throw Error('対象区間を確認してください。');
