@@ -170,5 +170,5 @@ action('handoff',async()=>{
 });
 window.addEventListener('message',event=>{if(event.source!==$('dialogue').contentWindow||event.origin!==window.location.origin)return;if(event.data?.type==='tc-dialogue-ready')dialogueReady=true;if(event.data?.type==='tc-transfer-result'){transferBusy=false;$('handoff').disabled=false;notice(event.data.ok?'工程2へ追加しました。':event.data.error,!event.data.ok);}});
 
-window.__TAURI__.event.listen('request-close',()=>{if(dialogueReady)$('dialogue').contentWindow.postMessage({type:'tc-close-request',dirty:state.dirty.size>0},window.location.origin);});
+window.__TAURI__.event.listen('request-close',()=>{if(dialogueReady)$('dialogue').contentWindow.postMessage({type:'tc-close-request',dirty:state.dirty.size>0},window.location.origin);else if(!state.dirty.size)invoke('close_app').catch(e=>notice(String(e),true));else notice('字幕の変更を保存してから閉じてください。',true);});
 window.addEventListener('message',event=>{if(event.source===$('dialogue').contentWindow&&event.origin===window.location.origin&&event.data?.type==='tc-close-approved')invoke('close_app').catch(e=>notice(String(e),true));});

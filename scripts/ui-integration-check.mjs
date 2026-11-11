@@ -14,8 +14,8 @@ try{
  page.setDefaultTimeout(6000);const errors=[];page.on('pageerror',e=>{errors.push(String(e));console.log(String(e));});
  await page.addInitScript(()=>{if(window.parent!==window)return;
   const vtt='WEBVTT\n\n00:00:00.000 --> 00:00:02.000\n<v 話者A>えっと、統合試験です。\n\n00:00:02.000 --> 00:00:04.000\n<v 話者B>次の発言です。\n';
-  window.__saved=[];window.__calls=[];
-  window.__TAURI__={event:{listen:async()=>()=>{}},core:{convertFileSrc:p=>'about:blank',invoke:async(cmd,args={})=>{
+  window.__saved=[];window.__calls=[];window.__listeners={};
+  window.__TAURI__={event:{listen:async(name,fn)=>{window.__listeners[name]=fn;return ()=>{};}},core:{convertFileSrc:p=>'about:blank',invoke:async(cmd,args={})=>{
    window.__calls.push({cmd,args});
    if(cmd==='bootstrap')return {home:'C:/fixtures',projects:[],ffmpeg:'ffmpeg',ffprobe:'ffprobe'};
    if(cmd==='connect_server')return {models:[{id:'whisper/tiny',x_meeting:{engineId:'whisper',engineLabel:'Whisper',label:'Tiny',modelId:'tiny',processingMethods:[{id:'cpu',label:'CPU'}]}}]};
@@ -54,6 +54,8 @@ try{
  await frame.getByRole('button',{name:'会話を編集',exact:true}).click();
  const smallFonts=await frame.locator('button,input,select,textarea,p,span').evaluateAll(elements=>elements.filter(e=>e.getBoundingClientRect().width&&parseFloat(getComputedStyle(e).fontSize)<16).map(e=>e.className));assert.deepEqual(smallFonts,[]);
  await mkdir('runtime/ui',{recursive:true});await page.screenshot({path:'runtime/ui/integrated-export.png'});
+ await page.evaluate(()=>window.__listeners['request-close']());await frame.getByRole('button',{name:'キャンセル',exact:true}).click();assert.equal(await page.evaluate(()=>window.__calls.filter(c=>c.cmd==='close_app').length),0);
+ await page.evaluate(()=>window.__listeners['request-close']());await frame.getByRole('button',{name:'続ける',exact:true}).click();await page.waitForFunction(()=>window.__calls.some(c=>c.cmd==='close_app'));
  assert.deepEqual(errors,[]);await writeFile('runtime/ui/result.json',JSON.stringify({passed:true,mockedBackend:true,savedComparisonSources:2,cut:cut.args,errors},null,2));
  console.log('工程2単独読込 → 工程1引継ぎ → 比較採用 → プロジェクト保存 → 動画出力接続: 成功');
 }finally{await browser?.close();await new Promise(r=>server.close(r));}
