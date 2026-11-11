@@ -76,6 +76,6 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(requested,'127.0.0.1',resolve);});
  const port=server.address().port;if(new RegExp(`\\b${port}\\b`).test(registry)){server.close();throw Error('割当ポートが台帳に予約されています。再実行してください。');}
  server.requestTimeout=0;
- console.log(`TranscriptCutter v0.2611.3: http://127.0.0.1:${port}/`);
+ console.log(`TranscriptCutter v0.2611.4: http://127.0.0.1:${port}/`);
  const close=()=>server.close(()=>process.exit(0));process.on('SIGTERM',close);process.on('SIGINT',close);
 }
