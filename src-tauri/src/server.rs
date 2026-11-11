@@ -153,4 +153,131 @@ mod tests {
             .iter()
             .any(|m| m["id"] == "whisper/tiny"));
     }
+    #[test]
+    fn synthetic_transcription_edit_cut_cancel() {
+        let Some(audio) = std::env::var_os("TC_E2E_AUDIO") else {
+            return;
+        };
+        let dir = std::path::PathBuf::from(std::env::var_os("TC_E2E_DIR").expect("TC_E2E_DIR"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let source = dir.join(format!("synthetic-{}.mp4", uuid::Uuid::new_v4().simple()));
+        let status = crate::media::command(&crate::media::tool("ffmpeg").unwrap())
+            .args([
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=640x360:rate=25",
+                "-i",
+            ])
+            .arg(audio)
+            .args([
+                "-shortest",
+                "-c:v",
+                "libx264",
+                "-c:a",
+                "aac",
+                "-pix_fmt",
+                "yuv420p",
+                "-n",
+            ])
+            .arg(&source)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let m = crate::media::probe(&source).unwrap();
+        let (server, _) = Server::connect("http://127.0.0.1:8769").unwrap();
+        let accepted = server
+            .upload(&source, "whisper", "tiny", "cpu", false)
+            .unwrap();
+        let id = accepted["job"]["id"].as_str().unwrap();
+        let mut complete = None;
+        for _ in 0..360 {
+            let value = server.get(&format!("/api/jobs/{id}")).unwrap();
+            match value["job"]["status"].as_str().unwrap_or("") {
+                "complete" => {
+                    complete = Some(value["job"].clone());
+                    break;
+                }
+                "error" | "cancelled" | "interrupted" => panic!("Recognition failed: {value}"),
+                _ => std::thread::sleep(Duration::from_millis(500)),
+            }
+        }
+        let job = complete.expect("recognition timeout");
+        let segments = server
+            .get(&format!("/api/jobs/{id}/segments?after=0&limit=1000"))
+            .unwrap();
+        assert!(segments["segments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| !s["text"].as_str().unwrap_or("").trim().is_empty()));
+        let first = &segments["segments"][0];
+        let original = first["text"].as_str().unwrap();
+        let text = format!("{original}［合成動画検証］");
+        server
+            .change(
+                &format!("/api/jobs/{id}/segments"),
+                &json!({"edits":[{"id":first["id"],"text":text,"speaker":"検証話者"}]}),
+                true,
+            )
+            .unwrap();
+        let edited = server
+            .get(&format!("/api/jobs/{id}/segments?after=0&limit=1000"))
+            .unwrap();
+        assert_eq!(edited["segments"][0]["text"], text);
+        assert_eq!(edited["segments"][0]["speaker"], "検証話者");
+        let kept = crate::media::ranges(
+            &[
+                crate::media::Range {
+                    start: 0.5,
+                    end: 2.,
+                },
+                crate::media::Range { start: 3., end: 5. },
+            ],
+            m.duration,
+            false,
+        )
+        .unwrap();
+        let output = dir.join(format!("cut-{id}.mp4"));
+        crate::media::cut(
+            &m,
+            &kept,
+            &output,
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            |_| {},
+        )
+        .unwrap();
+        let cut = crate::media::probe(&output).unwrap();
+        assert!(cut.audio);
+        assert!((cut.duration - 3.5).abs() < 0.4);
+        let cancel = server
+            .upload(&source, "whisper", "tiny", "cpu", false)
+            .unwrap();
+        let cancel_id = cancel["job"]["id"].as_str().unwrap();
+        server
+            .change(&format!("/api/jobs/{cancel_id}/cancel"), &json!({}), false)
+            .unwrap();
+        let mut cancellation = String::new();
+        for _ in 0..40 {
+            let v = server.get(&format!("/api/jobs/{cancel_id}")).unwrap();
+            cancellation = v["job"]["status"].as_str().unwrap_or("").into();
+            if cancellation == "cancelled" {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(250));
+        }
+        assert_eq!(cancellation, "cancelled");
+        let report = json!({"job":job,"segments":edited["segments"],"source":m,"cut":cut,"kept":kept,"cancelledJob":cancel_id,"cancellation":cancellation});
+        std::fs::write(
+            dir.join("e2e-result.json"),
+            serde_json::to_vec_pretty(&report).unwrap(),
+        )
+        .unwrap();
+        println!(
+            "synthetic E2E evidence: {}",
+            dir.join("e2e-result.json").display()
+        );
+    }
 }

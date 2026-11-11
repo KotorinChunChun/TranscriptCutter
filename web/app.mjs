@@ -30,7 +30,7 @@ async function saveEdits(){
  if(active(state.job?.status))throw Error('認識完了後に字幕を保存してください。');
  const edits=[...state.dirty.values()].map(e=>({...e}));
  for(let n=0;n<edits.length;n+=100) await invoke('edit_segments',{id:state.job.id,edits:edits.slice(n,n+100)});
- for(const edit of edits){const current=state.dirty.get(edit.id);if(current?.text===edit.text&&current?.speaker===edit.speaker)state.dirty.delete(edit.id);}controls();notice('字幕の変更を保存しました。');
+ for(const edit of edits){const current=state.dirty.get(edit.id);if(current?.text===edit.text&&current?.speaker===edit.speaker)state.dirty.delete(edit.id);}await loadSegments();controls();notice('字幕の変更を保存しました。');
 }
 function modelChanged(){
  const model=state.models.find(m=>m.id===$('model').value),x=model?.x_meeting??{};

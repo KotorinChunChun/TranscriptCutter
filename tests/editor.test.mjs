@@ -12,3 +12,7 @@ test('cut subtitles are clipped and retimed across disjoint ranges',()=>{
  const output=timelineSegments([{id:1,start:0,end:3,text:'first'},{id:2,start:5,end:8,text:'second'}],[{start:1,end:2},{start:6,end:8}]);
  assert.deepEqual(output.map(s=>[s.start,s.end,s.sourceStart,s.sourceEnd]),[[0,1,1,2],[1,3,6,8]]);
 });
+test('speaker evidence follows the cut time axis',()=>{
+ const [s]=timelineSegments([{start:5,end:10,text:'speech',speakerIntervals:[{start:6,end:9,speaker:'A'}]}],[{start:7,end:8}]);
+ assert.deepEqual(s.speakerIntervals,[{start:0,end:1,speaker:'A'}]);
+});

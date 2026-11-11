@@ -215,109 +215,115 @@ pub fn cut(
         .tempdir_in(output.parent().ok_or("保存先が不正です。")?)
         .map_err(|e| e.to_string())?;
     let ffmpeg = tool("ffmpeg")?;
-    let mut parts = Vec::new();
     let total: f64 = kept.iter().map(|r| r.end - r.start).sum();
-    let mut done = 0.0;
-    for (i, r) in kept.iter().enumerate() {
-        let path = temp.path().join(format!("part{i}.mp4"));
-        let mut cmd = command(&ffmpeg);
-        cmd.args([
-            "-nostdin",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-ss",
-            &r.start.to_string(),
-        ])
-        .arg("-i")
-        .arg(&media.path)
-        .args([
-            "-t",
-            &(r.end - r.start).to_string(),
-            "-map",
-            "0:v:0",
-            "-map",
-            "0:a:0?",
-            "-sn",
-            "-dn",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "fast",
-            "-crf",
-            "20",
-            "-pix_fmt",
-            "yuv420p",
-            "-vf",
-            "scale=trunc(iw/2)*2:trunc(ih/2)*2",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "192k",
-            "-avoid_negative_ts",
-            "make_zero",
-            "-movflags",
-            "+faststart",
-            "-n",
-        ])
-        .arg(&path);
-        run(&mut cmd, cancel.clone())?;
-        parts.push(path);
-        done += r.end - r.start;
-        progress((done / total * 90.0).min(90.0));
+    // Remap each original frame onto the kept timeline. Concatenating separately
+    // rounded video clips accumulates a frame of drift at every short range.
+    let select = kept
+        .iter()
+        .map(|r| format!("gte(t,{})*lt(t,{})", r.start, r.end))
+        .collect::<Vec<_>>()
+        .join("+");
+    let mut previous = 0.0;
+    let gaps = kept
+        .iter()
+        .map(|r| {
+            let gap = r.start - previous;
+            previous = r.end;
+            format!("if(gte(PTS*TB,{}),{gap},0)", r.start)
+        })
+        .collect::<Vec<_>>()
+        .join("+");
+    let mut graph = format!("[0:v:0]select='{select}',setpts='PTS-({gaps})/TB',scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1[v]");
+    if media.audio {
+        graph.push_str(";\n");
     }
-    let list = temp.path().join("list.txt");
-    // Generated ASCII basenames keep concat parsing independent of user path characters.
-    std::fs::write(
-        &list,
-        (0..parts.len())
-            .map(|i| format!("file 'part{i}.mp4'\n"))
-            .collect::<String>(),
-    )
-    .map_err(|e| e.to_string())?;
+    let mut pads = String::new();
+    for (i, r) in kept.iter().enumerate() {
+        let length = r.end - r.start;
+        if media.audio {
+            graph.push_str(&format!("[0:a:0]atrim=start={}:end={},asetpts=PTS-STARTPTS,apad=whole_dur={length},atrim=duration={length}[a{i}];\n",r.start,r.end));
+            pads.push_str(&format!("[a{i}]"));
+        }
+    }
+    if media.audio {
+        graph.push_str(&format!("{pads}concat=n={}:v=0:a=1[a]", kept.len()));
+    }
+    let script = temp.path().join("cut-filter.txt");
+    std::fs::write(&script, graph).map_err(|e| e.to_string())?;
+    let progress_path = temp.path().join("progress.txt");
     let joined = temp.path().join("joined.mp4");
     let mut cmd = command(&ffmpeg);
+    cmd.args(["-nostdin", "-hide_banner", "-loglevel", "error", "-i"])
+        .arg(&media.path)
+        .arg("-filter_complex_script")
+        .arg(&script)
+        .args(["-map", "[v]"]);
+    if media.audio {
+        cmd.args(["-map", "[a]"]);
+    }
     cmd.args([
-        "-nostdin",
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-f",
-        "concat",
-        "-safe",
-        "1",
-        "-i",
+        "-sn",
+        "-dn",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "fast",
+        "-crf",
+        "20",
+        "-pix_fmt",
+        "yuv420p",
+        "-fps_mode",
+        "vfr",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        "-movflags",
+        "+faststart",
+        "-progress",
     ])
-    .arg(&list)
-    .args(["-c", "copy", "-movflags", "+faststart", "-n"])
+    .arg(&progress_path)
+    .arg("-n")
     .arg(&joined);
-    run(&mut cmd, cancel.clone())?;
+    run_with_tick(&mut cmd, cancel.clone(), || {
+        if let Ok(text) = std::fs::read_to_string(&progress_path) {
+            if let Some(us) = text.lines().rev().find_map(|l| {
+                l.strip_prefix("out_time_us=")
+                    .and_then(|s| s.parse::<f64>().ok())
+            }) {
+                progress((us / 1_000_000.0 / total * 95.0).clamp(0.0, 95.0));
+            }
+        }
+    })?;
     if cancel.load(Ordering::SeqCst) {
         return Err("書き出しを中止しました。".into());
     }
     let checked = probe(&joined)?;
-    if (checked.duration - total).abs() > (kept.len() as f64 * 0.12 + 0.2)
-        || (media.audio && !checked.audio)
-    {
+    if (checked.duration - total).abs() > 0.2 || (media.audio && !checked.audio) {
         return Err("書き出し動画の時間または音声を検証できません。".into());
     }
-    let mut file =
-        tempfile::NamedTempFile::new_in(output.parent().unwrap()).map_err(|e| e.to_string())?;
-    std::io::copy(
-        &mut std::fs::File::open(joined).map_err(|e| e.to_string())?,
-        &mut file,
-    )
-    .map_err(|e| e.to_string())?;
-    file.as_file().sync_all().map_err(|e| e.to_string())?;
+    std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&joined)
+        .map_err(|e| e.to_string())?
+        .sync_all()
+        .map_err(|e| e.to_string())?;
     if cancel.load(Ordering::SeqCst) {
         return Err("書き出しを中止しました。".into());
     }
-    file.persist_noclobber(output)
+    tempfile::TempPath::try_from_path(joined)
+        .map_err(|e| e.to_string())?
+        .persist_noclobber(output)
         .map_err(|e| format!("保存できません（既存ファイルは保持）: {e}"))?;
     progress(100.0);
     Ok(())
 }
+#[cfg(test)]
 fn run(cmd: &mut Command, cancel: Arc<AtomicBool>) -> Result<()> {
+    run_with_tick(cmd, cancel, || {})
+}
+fn run_with_tick(cmd: &mut Command, cancel: Arc<AtomicBool>, tick: impl Fn()) -> Result<()> {
     if cancel.load(Ordering::SeqCst) {
         return Err("書き出しを中止しました。".into());
     }
@@ -342,6 +348,7 @@ fn run(cmd: &mut Command, cancel: Arc<AtomicBool>) -> Result<()> {
         String::from_utf8_lossy(&tail).into_owned()
     });
     loop {
+        tick();
         if cancel.load(Ordering::SeqCst) {
             let _ = child.kill();
             let _ = child.wait();
@@ -371,6 +378,37 @@ fn run(cmd: &mut Command, cancel: Arc<AtomicBool>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn running_process_cancellation() {
+        if std::env::var_os("TC_MEDIA_TEST").is_none() {
+            return;
+        }
+        let cancel = Arc::new(AtomicBool::new(false));
+        let c = cancel.clone();
+        let timer = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(300));
+            c.store(true, Ordering::SeqCst);
+        });
+        let mut cmd = command(&tool("ffmpeg").unwrap());
+        cmd.args([
+            "-v",
+            "error",
+            "-re",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=320x240:rate=25",
+            "-t",
+            "30",
+            "-f",
+            "null",
+            "-",
+        ]);
+        let start = std::time::Instant::now();
+        assert!(run(&mut cmd, cancel).unwrap_err().contains("中止"));
+        timer.join().unwrap();
+        assert!(start.elapsed() < Duration::from_secs(5));
+    }
     #[test]
     fn merge_and_complement() {
         let r = [
@@ -480,7 +518,9 @@ mod tests {
         let result = probe(&output).unwrap();
         assert!((result.duration - 3.).abs() < 0.35);
         assert!(result.audio);
+        let existing_output = std::fs::read(&output).unwrap();
         assert!(cut(&m, &kept, &output, Arc::new(AtomicBool::new(false)), |_| {}).is_err());
+        assert_eq!(std::fs::read(&output).unwrap(), existing_output);
         assert_eq!(std::fs::read(&input).unwrap(), original);
         let cancelled = d.path().join("cancel.mp4");
         assert!(cut(
@@ -492,5 +532,72 @@ mod tests {
         )
         .is_err());
         assert!(!cancelled.exists());
+        let many: Vec<Range> = (0..20)
+            .map(|i| Range {
+                start: i as f64 * 0.25,
+                end: i as f64 * 0.25 + 0.1,
+            })
+            .collect();
+        let many_output = d.path().join("twenty.mp4");
+        cut(
+            &m,
+            &many,
+            &many_output,
+            Arc::new(AtomicBool::new(false)),
+            |_| {},
+        )
+        .unwrap();
+        let many_result = probe(&many_output).unwrap();
+        assert!(
+            (many_result.duration - 2.0).abs() < 0.12,
+            "20 range duration: {}",
+            many_result.duration
+        );
+        assert!(many_result.audio);
+        let removed = d.path().join("removed.mp4");
+        let remove = ranges(&[Range { start: 1., end: 2. }], m.duration, true).unwrap();
+        cut(
+            &m,
+            &remove,
+            &removed,
+            Arc::new(AtomicBool::new(false)),
+            |_| {},
+        )
+        .unwrap();
+        assert!((probe(&removed).unwrap().duration - (m.duration - 1.)).abs() < 0.12);
+        let silent = d.path().join("silent.mp4");
+        assert!(command(&tool("ffmpeg").unwrap())
+            .args([
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=320x240:rate=25:duration=2",
+                "-c:v",
+                "libx264",
+                "-n"
+            ])
+            .arg(&silent)
+            .status()
+            .unwrap()
+            .success());
+        let silent_media = probe(&silent).unwrap();
+        assert!(!silent_media.audio);
+        let silent_cut = d.path().join("silent-cut.mp4");
+        cut(
+            &silent_media,
+            &[Range {
+                start: 0.3,
+                end: 1.3,
+            }],
+            &silent_cut,
+            Arc::new(AtomicBool::new(false)),
+            |_| {},
+        )
+        .unwrap();
+        let silent_result = probe(&silent_cut).unwrap();
+        assert!(!silent_result.audio);
+        assert!((silent_result.duration - 1.).abs() < 0.12);
     }
 }
