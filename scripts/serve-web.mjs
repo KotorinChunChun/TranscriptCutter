@@ -4,7 +4,7 @@ import https from 'node:https';
 import {readFile,stat} from 'node:fs/promises';
 import {resolve,extname,sep} from 'node:path';
 import {pathToFileURL,fileURLToPath} from 'node:url';
-import {connectSpeech,serverUrl,ConnectionError} from './speech-connection.mjs';
+import {connectSpeech,serverUrl,ConnectionError,networkConnectionError} from './speech-connection.mjs';
 const allowed=/^\/(?:api\/(?:health|jobs(?:\/[a-fA-F0-9]{32}(?:\/(?:segments|cancel))?)?)|v1\/models)$/;
 export function createWebServer({directory=fileURLToPath(new URL('../dist-web/',import.meta.url)),speechUrl='http://127.0.0.1:8769',speechToken=''}={}){
  const root=resolve(directory),initial=serverUrl(speechUrl),sessions=new Map();
@@ -51,10 +51,10 @@ export function createWebServer({directory=fileURLToPath(new URL('../dist-web/',
    const transport=target.protocol==='https:'?https:http;
    const upstream=transport.request(new URL(path+url.search,target),{method:req.method,headers},reply=>{
     if(reply.statusCode>=300&&reply.statusCode<400){reply.resume();fail(res,new ConnectionError('サーバーが別URLを返しました。接続先を確認してください。',502,'redirect_refused'));return;}
-    if(reply.statusCode===401){reply.resume();if(session.connection===connection)session.connection=null;fail(res,new ConnectionError('サーバー接続キーを確認し、接続設定から再接続してください。',401,'bearer_key_required'));return;}
+    if(reply.statusCode===401){reply.resume();if(session.connection===connection)session.connection=null;fail(res,connection.health.authMode==='bearer'?new ConnectionError('サーバー接続キーを確認し、接続設定から再接続してください。',401,'bearer_key_invalid'):new ConnectionError('LAN/このPCの一時操作トークンが無効になりました。「再接続」で取り直してください。接続キーの入力は不要です。',401,'operation_token_expired'));return;}
     res.writeHead(reply.statusCode??502,{'Content-Type':reply.headers['content-type']??'application/json'});reply.pipe(res);
    });
-   upstream.on('error',()=>{if(!res.headersSent){res.writeHead(502,{'Content-Type':'application/json'});res.end(JSON.stringify({error:'文字起こしサーバーへ接続できません。起動状態と接続設定を確認してください。'}));}else res.destroy();});
+   upstream.on('error',error=>{if(!res.headersSent)fail(res,networkConnectionError(error));else res.destroy();});
    req.on('aborted',()=>upstream.destroy());res.on('close',()=>{if(!res.writableEnded)upstream.destroy();});req.pipe(upstream);return;
   }
   if(req.method!=='GET'&&req.method!=='HEAD'){res.writeHead(405).end();return;}
@@ -76,6 +76,6 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(requested,'127.0.0.1',resolve);});
  const port=server.address().port;if(new RegExp(`\\b${port}\\b`).test(registry)){server.close();throw Error('割当ポートが台帳に予約されています。再実行してください。');}
  server.requestTimeout=0;
- console.log(`TranscriptCutter v0.2611.5: http://127.0.0.1:${port}/`);
+ console.log(`TranscriptCutter v0.2611.6: http://127.0.0.1:${port}/`);
  const close=()=>server.close(()=>process.exit(0));process.on('SIGTERM',close);process.on('SIGINT',close);
 }

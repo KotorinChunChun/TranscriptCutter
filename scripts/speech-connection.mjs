@@ -3,6 +3,12 @@ import https from 'node:https';
 export class ConnectionError extends Error {
  constructor(message,status=502,code='connection_failed'){super(message);this.status=status;this.code=code;}
 }
+export function networkConnectionError(error){
+ if(['EACCES','EPERM'].includes(error?.code))return new ConnectionError('このWeb版の中継プロセスから接続が許可されていません。接続元PCのネットワーク・実行権限を確認してください。接続キーの入力では解消しません。',502,'network_permission_denied');
+ if(error?.code==='ECONNREFUSED')return new ConnectionError('接続先が応答を拒否しました。サーバーの起動・待受アドレス・ポートを確認してください。',502,'connection_refused');
+ if(['ETIMEDOUT','ESOCKETTIMEDOUT'].includes(error?.code))return new ConnectionError('接続がタイムアウトしました。接続元とサーバーの通信経路・待受を確認してください。',504,'connection_timeout');
+ return new ConnectionError('文字起こしサーバーへ接続できません。起動状態とURLを確認してください。',502,'connection_failed');
+}
 export function serverUrl(value){
  let url;try{url=new URL(value);}catch{throw new ConnectionError('サーバーURLを確認してください。',400);}
  if(!['http:','https:'].includes(url.protocol)||url.username||url.password||url.search||url.hash||url.pathname!=='/')throw new ConnectionError('サーバーURLはHTTP/HTTPSのオリジンで指定してください。',400);
@@ -17,8 +23,8 @@ function healthRequest(target,headers={}){
    response.on('end',()=>{let body;try{body=JSON.parse(Buffer.concat(chunks).toString());}catch{body=null;}resolve({status:response.statusCode,body});});
    response.on('error',()=>reject(new ConnectionError('サーバー応答を取得できません。')));
   });
-  request.setTimeout(10000,()=>request.destroy());
-  request.on('error',()=>reject(new ConnectionError('文字起こしサーバーへ接続できません。起動状態とURLを確認してください。')));
+  request.setTimeout(10000,()=>request.destroy(Object.assign(new Error('timeout'),{code:'ETIMEDOUT'})));
+  request.on('error',error=>reject(networkConnectionError(error)));
  });
 }
 const identity=body=>body?.appId==='meeting-transcriber'&&body?.protocolVersion===3;

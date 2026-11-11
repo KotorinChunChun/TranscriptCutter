@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {SpeechClient} from '../speech-client.ts';
+import {SpeechClient,needsBearerKey,SpeechError,canConfigureConnection} from '../speech-client.ts';
 import {segmentsToVtt} from '../segments-vtt.ts';
 import {parseVtt} from '../src/lib/vtt.ts';
 test('connection selection and subtitle PATCH use the same in-memory client instance without auth headers',async()=>{
@@ -19,4 +19,10 @@ test('upload uses file classification, source File and recognition bounds withou
 });
 test('incremental reads preserve a stable page target while recognition appends more rows',async()=>{
  const client=new SpeechClient();let calls=0;client.request=async path=>{calls++;return calls===1?{segments:[{id:3}],next:3,total:4}:{segments:[{id:4}],next:4,total:100};};const updates=await client.segments('job',2,2);assert.deepEqual(updates.map(s=>s.id),[3,4]);assert.equal(calls,2);
+});
+test('only an identified Bearer challenge can reveal the key field',async()=>{
+ const original=globalThis.fetch;try{for(const code of ['bearer_key_required','bearer_key_invalid','operation_token_expired','network_permission_denied','unrecognized_server']){globalThis.fetch=async()=>new Response(JSON.stringify({error:'合成エラー',code}),{status:401});try{await new SpeechClient().configure('http://192.168.1.2:8769','');assert.fail('expected error');}catch(error){assert.ok(error instanceof SpeechError);assert.equal(error.code,code);assert.equal(needsBearerKey(error),code.startsWith('bearer_'));}}}finally{globalThis.fetch=original;}
+});
+test('running jobs may refresh credentials only on the same configured URL',()=>{
+ assert.equal(canConfigureConnection(true,'http://192.168.49.105:8769/','http://192.168.49.105:8769'),true);assert.equal(canConfigureConnection(true,'http://192.168.49.105:8769/','http://192.168.49.12:8769'),false);assert.equal(canConfigureConnection(true,'http://192.168.49.105:8769/','invalid'),false);assert.equal(canConfigureConnection(false,'http://192.168.49.105:8769/','http://127.0.0.1:8769/'),true);
 });

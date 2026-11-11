@@ -2,6 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {createWebServer} from '../scripts/serve-web.mjs';
+import {networkConnectionError} from '../scripts/speech-connection.mjs';
 const listen=server=>new Promise(resolve=>server.listen(0,'127.0.0.1',()=>resolve(`http://127.0.0.1:${server.address().port}`)));
 const stop=server=>{server.closeAllConnections();return new Promise(resolve=>server.close(resolve));};
 const identity={appId:'meeting-transcriber',protocolVersion:3,serverVersion:'4.3.0'};
@@ -79,4 +80,13 @@ test('an authenticated API redirect does not forward the Bearer key to another o
  const upstream=createServer((req,res)=>{res.setHeader('Content-Type','application/json');if(req.url==='/api/health'){if(req.headers.authorization!=='Bearer fixture-server-key'){res.writeHead(401).end('{"error":"サーバーの接続キーを確認してください。"}');return;}res.end(JSON.stringify({...identity,authMode:'bearer'}));}else res.writeHead(307,{Location:dest+'/v1/models'}).end();});
  const base=await listen(upstream),web=createWebServer({speechUrl:base,speechToken:'fixture-server-key'}),url=await listen(web);
  try{const response=await fetch(url+'/speech/v1/models');assert.equal(response.status,502);assert.equal((await response.json()).code,'redirect_refused');assert.equal(destinationCalls.length,0);}finally{await stop(web);await stop(upstream);await stop(destination);}
+});
+test('a LAN token rejection never requests a Bearer key or replays a mutation',async()=>{
+ let token='first-fixture',posts=0;const received=[];
+ const upstream=createServer((req,res)=>{res.setHeader('Content-Type','application/json');if(req.url==='/api/health'){res.end(JSON.stringify({...identity,authMode:'lan',token}));return;}received.push(req.headers['x-local-token']);posts++;if(req.headers['x-local-token']!==token){res.writeHead(401).end('{"error":"expired"}');return;}res.end('{"job":{"status":"queued"}}');});
+ const base=await listen(upstream),web=createWebServer({speechUrl:base}),url=await listen(web);
+ try{await fetch(url+'/speech/api/health');token='rotated-fixture';const failed=await fetch(url+'/speech/api/jobs',{method:'POST',body:'synthetic'});assert.equal(failed.status,401);const error=await failed.json();assert.equal(error.code,'operation_token_expired');assert.match(error.error,/入力は不要/);assert.equal(posts,1);await fetch(url+'/speech/api/health');const next=await fetch(url+'/speech/api/jobs',{method:'POST',body:'synthetic'});assert.equal(next.status,200);assert.deepEqual(received,['first-fixture','rotated-fixture']);}finally{await stop(web);await stop(upstream);}
+});
+test('socket permission, refusal and timeout stay distinct from authentication',()=>{
+ assert.equal(networkConnectionError({code:'EACCES'}).code,'network_permission_denied');assert.match(networkConnectionError({code:'EACCES'}).message,/キーの入力では解消しません/);assert.equal(networkConnectionError({code:'ECONNREFUSED'}).code,'connection_refused');assert.equal(networkConnectionError({code:'ETIMEDOUT'}).status,504);
 });
