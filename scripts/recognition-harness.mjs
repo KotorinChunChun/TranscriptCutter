@@ -9,7 +9,7 @@ const api=createServer((req,res)=>{res.setHeader('Content-Type','application/jso
  else if(url.pathname==='/api/health')value={appId:'meeting-transcriber',protocolVersion:3,serverVersion:'fixture',token:'synthetic-only',authMode:'local'};
  else if(url.pathname==='/v1/models')value={data:[{id:'whisper/tiny',x_meeting:{engineId:'whisper',engineLabel:'合成検証',modelId:'tiny',label:'Tiny',processingMethods:[{id:'cpu',label:'CPU'}],defaultProcessingMethod:'cpu'}}]};
  else if(url.pathname==='/api/jobs')value={jobs:[job()]};
- else if(url.pathname===`/api/jobs/${id}`){requests++;if(status==='running')count+=7;value={job:job()};}
+ else if(url.pathname===`/api/jobs/${id}`){requests++;if(status==='running')count=Math.min(580,count+7);value={job:job()};}
  else if(url.pathname===`/api/jobs/${id}/segments`){const after=Number(url.searchParams.get('after')??0);value={segments:Array.from({length:Math.max(0,count-after)},(_,n)=>({id:after+n+1,start:60+(after+n)/20,end:60+(after+n+1)/20,text:`合成字幕${after+n+1}`})),total:count,next:count};}
  else{res.writeHead(404).end('{}');return;}res.end(JSON.stringify(value));
 });
