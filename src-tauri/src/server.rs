@@ -103,10 +103,27 @@ impl Server {
             .to_string_lossy()
             .to_string();
         decode(self.client.post(format!("{}/api/jobs",self.base))
-            .query(&[("name",name.as_str()),("engine",engine),("model",model),("device",device),("diarize",if diarize {"true"} else {"false"})])
+            .query(&file_job_query(&name, engine, model, device, diarize))
             .header("X-Local-Token",&self.token).header("Content-Type","application/octet-stream").header("Content-Length",length)
             .body(file).timeout(Duration::from_secs(7200)).send().map_err(|_|"送信の受付結果が不明です。自動再送は行いません。サーバーの履歴を確認してください。")?)
     }
+}
+fn file_job_query<'a>(
+    name: &'a str,
+    engine: &'a str,
+    model: &'a str,
+    device: &'a str,
+    diarize: bool,
+) -> [(&'static str, &'a str); 7] {
+    [
+        ("name", name),
+        ("engine", engine),
+        ("model", model),
+        ("device", device),
+        ("diarize", if diarize { "true" } else { "false" }),
+        ("clientId", "transcript-cutter"),
+        ("workload", "file"),
+    ]
 }
 fn decode(response: Response) -> Result<Value> {
     let status = response.status();
@@ -135,6 +152,98 @@ pub fn job_id(id: &str) -> Result<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn file_classification_preserves_legacy_query() {
+        let request = Client::new()
+            .post("http://127.0.0.1:8769/api/jobs")
+            .query(&file_job_query("合成.mp4", "whisper", "tiny", "cpu", true))
+            .build()
+            .unwrap();
+        let query: std::collections::HashMap<_, _> =
+            request.url().query_pairs().into_owned().collect();
+        assert_eq!(query["clientId"], "transcript-cutter");
+        assert_eq!(query["workload"], "file");
+        assert_eq!(query["name"], "合成.mp4");
+        assert_eq!(query["engine"], "whisper");
+        assert_eq!(query["model"], "tiny");
+        assert_eq!(query["device"], "cpu");
+        assert_eq!(query["diarize"], "true");
+    }
+    #[test]
+    fn old_server_shape_upload_status_cancel_and_segments() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let worker = std::thread::spawn(move || {
+            for index in 0..4 {
+                let (mut socket, _) = listener.accept().unwrap();
+                socket
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut bytes = Vec::new();
+                let mut byte = [0u8; 1];
+                while !bytes.ends_with(b"\r\n\r\n") {
+                    socket.read_exact(&mut byte).unwrap();
+                    bytes.push(byte[0]);
+                }
+                let headers = String::from_utf8(bytes).unwrap();
+                assert!(headers.to_lowercase().contains("x-local-token: fixture"));
+                let length = headers
+                    .lines()
+                    .find_map(|l| {
+                        l.to_lowercase()
+                            .strip_prefix("content-length: ")
+                            .and_then(|v| v.parse::<usize>().ok())
+                    })
+                    .unwrap_or(0);
+                let mut body = vec![0; length];
+                socket.read_exact(&mut body).unwrap();
+                let payload=match index {
+                    0=>{assert!(headers.contains("clientId=transcript-cutter"));assert!(headers.contains("workload=file"));assert_eq!(body,b"synthetic");json!({"job":{"id":"0123456789abcdef0123456789abcdef","status":"queued"}})},
+                    1=>json!({"job":{"status":"complete"}}),
+                    2=>json!({"job":{"status":"cancelled"}}),
+                    _=>json!({"segments":[{"id":1,"start":1.25,"end":4.75,"text":"合成"}],"total":1}),
+                }.to_string();
+                write!(socket,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",payload.len(),payload).unwrap();
+            }
+        });
+        let server = Server {
+            client: Client::builder().no_proxy().build().unwrap(),
+            base,
+            token: "fixture".into(),
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("synthetic.mp4");
+        std::fs::write(&path, b"synthetic").unwrap();
+        assert_eq!(
+            server
+                .upload(&path, "whisper", "tiny", "cpu", false)
+                .unwrap()["job"]["status"],
+            "queued"
+        );
+        assert_eq!(
+            server
+                .get("/api/jobs/0123456789abcdef0123456789abcdef")
+                .unwrap()["job"]["status"],
+            "complete"
+        );
+        assert_eq!(
+            server
+                .change(
+                    "/api/jobs/0123456789abcdef0123456789abcdef/cancel",
+                    &json!({}),
+                    false
+                )
+                .unwrap()["job"]["status"],
+            "cancelled"
+        );
+        let segments = server
+            .get("/api/jobs/0123456789abcdef0123456789abcdef/segments")
+            .unwrap();
+        assert_eq!(segments["segments"][0]["start"], 1.25);
+        assert_eq!(segments["segments"][0]["end"], 4.75);
+        worker.join().unwrap();
+    }
     #[test]
     fn rejects_remote() {
         assert!(Server::connect("https://example.com").is_err());

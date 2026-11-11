@@ -101,10 +101,10 @@ pub fn probe(path: &Path) -> Result<Media> {
     let streams = value["streams"]
         .as_array()
         .ok_or("動画ストリームがありません。")?;
-    let video = streams
-        .iter()
-        .find(|s| s["codec_type"] == "video")
-        .ok_or("動画ストリームがありません。")?;
+    let video = streams.iter().find(|s| s["codec_type"] == "video");
+    if video.is_none() && !streams.iter().any(|s| s["codec_type"] == "audio") {
+        return Err("動画・音声がありません。".into());
+    }
     let duration: f64 = value["format"]["duration"]
         .as_str()
         .unwrap_or("")
@@ -117,13 +117,25 @@ pub fn probe(path: &Path) -> Result<Media> {
         path: path.to_string_lossy().into(),
         duration,
         audio: streams.iter().any(|s| s["codec_type"] == "audio"),
-        width: video["width"].as_u64().unwrap_or(0),
-        height: video["height"].as_u64().unwrap_or(0),
+        width: video.and_then(|v| v["width"].as_u64()).unwrap_or(0),
+        height: video.and_then(|v| v["height"].as_u64()).unwrap_or(0),
     })
 }
 pub fn ranges(input: &[Range], duration: f64, remove: bool) -> Result<Vec<Range>> {
-    if !duration.is_finite() || duration <= 0.0 || input.is_empty() || input.len() > 200 {
-        return Err("1〜200個の範囲を指定してください。".into());
+    validated_ranges(input, duration, remove, 200, 0.02)
+}
+pub fn dialogue_ranges(input: &[Range], duration: f64, remove: bool) -> Result<Vec<Range>> {
+    validated_ranges(input, duration, remove, 10000, 0.000999)
+}
+fn validated_ranges(
+    input: &[Range],
+    duration: f64,
+    remove: bool,
+    limit: usize,
+    minimum: f64,
+) -> Result<Vec<Range>> {
+    if !duration.is_finite() || duration <= 0.0 || input.is_empty() || input.len() > limit {
+        return Err(format!("1〜{limit}個の範囲を指定してください。"));
     }
     let mut list = input.to_vec();
     for r in &list {
@@ -131,7 +143,7 @@ pub fn ranges(input: &[Range], duration: f64, remove: bool) -> Result<Vec<Range>
             || !r.end.is_finite()
             || r.start < 0.0
             || r.end > duration + 0.001
-            || r.end - r.start < 0.02
+            || r.end - r.start < minimum
         {
             return Err("範囲は動画内で、開始より終了を後にしてください（最小0.02秒）。".into());
         }
@@ -140,7 +152,7 @@ pub fn ranges(input: &[Range], duration: f64, remove: bool) -> Result<Vec<Range>
     let mut merged: Vec<Range> = Vec::new();
     for r in list {
         if let Some(last) = merged.last_mut() {
-            if r.start <= last.end + 0.001 {
+            if r.start <= last.end + 0.000001 {
                 last.end = last.end.max(r.end).min(duration);
                 continue;
             }
@@ -234,7 +246,10 @@ pub fn cut(
         .collect::<Vec<_>>()
         .join("+");
     let mut graph = format!("[0:v:0]select='{select}',setpts='PTS-({gaps})/TB',scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1[v]");
-    if media.audio {
+    if media.width == 0 {
+        graph.clear();
+    }
+    if media.audio && media.width > 0 {
         graph.push_str(";\n");
     }
     let mut pads = String::new();
@@ -256,8 +271,10 @@ pub fn cut(
     cmd.args(["-nostdin", "-hide_banner", "-loglevel", "error", "-i"])
         .arg(&media.path)
         .arg("-filter_complex_script")
-        .arg(&script)
-        .args(["-map", "[v]"]);
+        .arg(&script);
+    if media.width > 0 {
+        cmd.args(["-map", "[v]"]);
+    }
     if media.audio {
         cmd.args(["-map", "[a]"]);
     }
@@ -378,6 +395,57 @@ fn run_with_tick(cmd: &mut Command, cancel: Arc<AtomicBool>, tick: impl Fn()) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn dialogue_millisecond_ranges() {
+        let input: Vec<Range> = (0..500)
+            .map(|i| Range {
+                start: i as f64 * 0.01,
+                end: i as f64 * 0.01 + 0.001,
+            })
+            .collect();
+        assert_eq!(dialogue_ranges(&input, 6.0, false).unwrap().len(), 500);
+        assert!(ranges(&input, 6.0, false).is_err());
+    }
+    #[test]
+    fn actual_audio_only_export() {
+        if std::env::var_os("TC_MEDIA_TEST").is_none() {
+            return;
+        }
+        let d = tempfile::tempdir().unwrap();
+        let input = d.path().join("audio.wav");
+        assert!(command(&tool("ffmpeg").unwrap())
+            .args([
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=6"
+            ])
+            .arg(&input)
+            .status()
+            .unwrap()
+            .success());
+        let m = probe(&input).unwrap();
+        assert_eq!(m.width, 0);
+        let original = std::fs::read(&input).unwrap();
+        let output = d.path().join("audio.m4a");
+        cut(
+            &m,
+            &[Range {
+                start: 1.25,
+                end: 4.75,
+            }],
+            &output,
+            Arc::new(AtomicBool::new(false)),
+            |_| {},
+        )
+        .unwrap();
+        let result = probe(&output).unwrap();
+        assert!(result.audio);
+        assert!((result.duration - 3.5).abs() < 0.12);
+        assert_eq!(std::fs::read(input).unwrap(), original);
+    }
     #[test]
     fn running_process_cancellation() {
         if std::env::var_os("TC_MEDIA_TEST").is_none() {

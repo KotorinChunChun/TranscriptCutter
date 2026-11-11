@@ -201,6 +201,12 @@
           "markdownDescription": "Enables the cancel_transcription command without any pre-configured scope."
         },
         {
+          "description": "Enables the close_app command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-close-app",
+          "markdownDescription": "Enables the close_app command without any pre-configured scope."
+        },
+        {
           "description": "Enables the connect_server command without any pre-configured scope.",
           "type": "string",
           "const": "allow-connect-server",
@@ -211,6 +217,12 @@
           "type": "string",
           "const": "allow-cut-status",
           "markdownDescription": "Enables the cut_status command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the dialogue_cut command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-dialogue-cut",
+          "markdownDescription": "Enables the dialogue_cut command without any pre-configured scope."
         },
         {
           "description": "Enables the edit_segments command without any pre-configured scope.",
@@ -231,6 +243,12 @@
           "markdownDescription": "Enables the get_segments command without any pre-configured scope."
         },
         {
+          "description": "Enables the inspect_dialogue_media command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-inspect-dialogue-media",
+          "markdownDescription": "Enables the inspect_dialogue_media command without any pre-configured scope."
+        },
+        {
           "description": "Enables the job_status command without any pre-configured scope.",
           "type": "string",
           "const": "allow-job-status",
@@ -241,6 +259,12 @@
           "type": "string",
           "const": "allow-open-media",
           "markdownDescription": "Enables the open_media command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the read_subtitle command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-read-subtitle",
+          "markdownDescription": "Enables the read_subtitle command without any pre-configured scope."
         },
         {
           "description": "Enables the save_project command without any pre-configured scope.",
@@ -285,6 +309,12 @@
           "markdownDescription": "Denies the cancel_transcription command without any pre-configured scope."
         },
         {
+          "description": "Denies the close_app command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-close-app",
+          "markdownDescription": "Denies the close_app command without any pre-configured scope."
+        },
+        {
           "description": "Denies the connect_server command without any pre-configured scope.",
           "type": "string",
           "const": "deny-connect-server",
@@ -295,6 +325,12 @@
           "type": "string",
           "const": "deny-cut-status",
           "markdownDescription": "Denies the cut_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the dialogue_cut command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-dialogue-cut",
+          "markdownDescription": "Denies the dialogue_cut command without any pre-configured scope."
         },
         {
           "description": "Denies the edit_segments command without any pre-configured scope.",
@@ -315,6 +351,12 @@
           "markdownDescription": "Denies the get_segments command without any pre-configured scope."
         },
         {
+          "description": "Denies the inspect_dialogue_media command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-inspect-dialogue-media",
+          "markdownDescription": "Denies the inspect_dialogue_media command without any pre-configured scope."
+        },
+        {
           "description": "Denies the job_status command without any pre-configured scope.",
           "type": "string",
           "const": "deny-job-status",
@@ -325,6 +367,12 @@
           "type": "string",
           "const": "deny-open-media",
           "markdownDescription": "Denies the open_media command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the read_subtitle command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-read-subtitle",
+          "markdownDescription": "Denies the read_subtitle command without any pre-configured scope."
         },
         {
           "description": "Denies the save_project command without any pre-configured scope.",

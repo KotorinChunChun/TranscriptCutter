@@ -1,6 +1,10 @@
 fn main() {
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
+            "close_app",
+            "read_subtitle",
+            "inspect_dialogue_media",
+            "dialogue_cut",
             "bootstrap",
             "browse",
             "open_media",

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-dialogue-cut"
+description = "Enables the dialogue_cut command without any pre-configured scope."
+commands.allow = ["dialogue_cut"]
+
+[[permission]]
+identifier = "deny-dialogue-cut"
+description = "Denies the dialogue_cut command without any pre-configured scope."
+commands.deny = ["dialogue_cut"]

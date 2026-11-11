@@ -1,3 +1,4 @@
+import {confirmAction,choosePaths,readSubtitle,mediaFile,type DesktopFile} from '@/desktop';
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type UIEvent } from "react";
@@ -255,24 +256,24 @@ export function VttComparison({ session, onChange, onAddFiles, onApply, onExport
     onChange({ ...session, choices });
     setAnnouncement("すべての話者を採用した字幕に合わせました");
   };
-  const changeReference = (id: string) => {
+  const changeReference = async (id: string) => {
     if (!session || id === session.referenceId) return;
     const nextSource = session.sources.find(source => source.id === id);
     if (!nextSource) return;
-    if (!window.confirm(`時間軸の基準を「${nextSource.name}」に変更します。行の区切りと採用内容を初期化し、このモデルの字幕を採用します。変更しますか？`)) return;
+    if (!(await confirmAction(`時間軸の基準を「${nextSource.name}」に変更します。行の区切りと採用内容を初期化し、このモデルの字幕を採用します。変更しますか？`))) return;
     onChange(setComparisonReference(session, id));
     setAnnouncement(`時間軸の基準を${nextSource.name}に変更しました`);
   };
-  const removeSource = (source: ComparisonSource) => {
+  const removeSource = async (source: ComparisonSource) => {
     if (!session || session.sources.length <= 1) return;
     const hasSelections = rows.some(row => {
       const choice = getComparisonChoice(session, row);
       return choice.textSourceId === source.id || (choice.speaker && "sourceId" in choice.speaker && choice.speaker.sourceId === source.id);
     });
     const removingReference = session.referenceId === source.id;
-    if ((hasSelections || removingReference) && !window.confirm(removingReference
+    if ((hasSelections || removingReference) && !(await confirmAction(removingReference
       ? `「${source.name}」を比較から外します。時間軸の基準が変わるため、残るモデルの先頭を基準に採用内容を初期化します。外しますか？`
-      : `「${source.name}」を比較から外します。このモデルから採用した字幕は未採用に戻り、話者の指定は解除されます。外しますか？`)) return;
+      : `「${source.name}」を比較から外します。このモデルから採用した字幕は未採用に戻り、話者の指定は解除されます。外しますか？`))) return;
     onChange(removeComparisonSource(session, source.id));
     setAnnouncement(`${source.name}を比較から外しました`);
   };

@@ -156,3 +156,19 @@ async function init(){
 }
 init().catch(e=>{notice(String(e),true);$('settings').hidden=false;});
 
+
+let dialogueReady=false,transferBusy=false;
+function stage(two){$('dialogue').hidden=!two;$('stageOne').setAttribute('aria-pressed',String(!two));$('stageTwo').setAttribute('aria-pressed',String(two));if(two)$('video').pause();else $('dialogue').contentWindow.postMessage({type:'tc-pause'},window.location.origin);}
+action('stageOne',()=>stage(false));action('stageTwo',()=>stage(true));
+action('handoff',async()=>{
+ if(!dialogueReady)throw Error('工程2の準備中です。');
+ if(transferBusy)return;if(!state.job||state.job.status!=='complete')throw Error('文字起こし完了後に引き継いでください。');
+ await saveEdits();await loadSegments();if(!state.segments.length)throw Error('字幕がありません。');
+ const result=makeExport({segments:state.segments,format:'vtt'});
+ transferBusy=true;$('handoff').disabled=true;stage(true);
+ $('dialogue').contentWindow.postMessage({type:'tc-transfer',payload:{vtt:result.text,name:state.media.path.split(/[\\/]/).at(-1)+'-'+state.job.id.slice(0,8)+'.vtt',mediaPath:state.media.path}},window.location.origin);
+});
+window.addEventListener('message',event=>{if(event.source!==$('dialogue').contentWindow||event.origin!==window.location.origin)return;if(event.data?.type==='tc-dialogue-ready')dialogueReady=true;if(event.data?.type==='tc-transfer-result'){transferBusy=false;$('handoff').disabled=false;notice(event.data.ok?'工程2へ追加しました。':event.data.error,!event.data.ok);}});
+
+window.__TAURI__.event.listen('request-close',()=>{if(dialogueReady)$('dialogue').contentWindow.postMessage({type:'tc-close-request',dirty:state.dirty.size>0},window.location.origin);});
+window.addEventListener('message',event=>{if(event.source===$('dialogue').contentWindow&&event.origin===window.location.origin&&event.data?.type==='tc-close-approved')invoke('close_app').catch(e=>notice(String(e),true));});

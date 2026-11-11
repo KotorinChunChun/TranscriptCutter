@@ -1,6 +1,8 @@
 <!doctype html>
 <html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TranscriptCutter</title><link rel="stylesheet" href="style.css"></head>
 <body>
+<nav id="workflow"><button id="stageOne" aria-pressed="true">工程1 文字起こし</button><button id="stageTwo" aria-pressed="false">工程2 VTT統合・編集・カット</button><button id="handoff">結果を工程2へ追加</button></nav>
+<iframe id="dialogue" title="工程2 VTT統合・編集・カット" src="dialogue/index.html" hidden></iframe>
 <header><strong>TranscriptCutter</strong><button id="open">動画を開く</button><select id="history" aria-label="履歴"><option value="">履歴</option></select><span id="filename">動画未選択</span><button id="settingsToggle">接続設定</button></header>
 <section id="settings" hidden><label>TranscriptionServer <input id="serverUrl" value="http://127.0.0.1:8769"></label><button id="connect">接続</button><span id="connection">未接続</span><p id="tools"></p></section>
 <div id="notice" role="status" aria-live="polite">準備中</div>

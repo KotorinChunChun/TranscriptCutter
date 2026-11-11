@@ -88,7 +88,7 @@ async fn browse(path: String) -> Result<Value> {
         for e in std::fs::read_dir(&dir).map_err(|e|e.to_string())?.flatten() {
             let kind=match e.file_type(){Ok(k)=>k,Err(_)=>continue}; if kind.is_symlink(){continue;}
             let p=e.path(); let ext=p.extension().unwrap_or_default().to_string_lossy().to_lowercase();
-            if kind.is_dir() || ["mp4","mov","mkv","webm","avi","m4v","wmv","mts","m2ts"].contains(&ext.as_str()) {entries.push(json!({"name":e.file_name().to_string_lossy(),"path":p,"directory":kind.is_dir()}));}
+            if kind.is_dir() || ["mp4","mov","mkv","webm","avi","m4v","wmv","mts","m2ts","vtt","json","wav","mp3","m4a","ogg","flac","aac"].contains(&ext.as_str()) {entries.push(json!({"name":e.file_name().to_string_lossy(),"path":p,"directory":kind.is_dir()}));}
             if entries.len()>=10000 {return Err("項目が多すぎます。下位フォルダーのパスを直接入力してください。".into());}
         }
         entries.sort_by_key(|v|(!v["directory"].as_bool().unwrap_or(false),v["name"].as_str().unwrap_or("").to_lowercase()));
@@ -245,7 +245,7 @@ fn save_project(state: State<AppState>, project: Project) -> Result<()> {
 }
 #[tauri::command]
 fn export_text(dir: String, name: String, extension: String, text: String) -> Result<String> {
-    if !["txt", "srt", "vtt", "json"].contains(&extension.as_str()) {
+    if !["txt", "srt", "vtt", "json", "csv"].contains(&extension.as_str()) {
         return Err("未対応の出力形式です。".into());
     }
     let path = media::output_path(&dir, &name, &extension)?;
@@ -260,13 +260,30 @@ fn start_cut(
     dir: String,
     name: String,
 ) -> Result<()> {
+    let media = state
+        .inner
+        .lock()
+        .unwrap()
+        .media
+        .clone()
+        .ok_or("動画を選択してください。")?;
+    media::ranges(&ranges, media.duration, remove)?;
+    launch_cut(&state, media, ranges, remove, dir, name)
+}
+fn launch_cut(
+    state: &AppState,
+    media: Media,
+    ranges: Vec<Range>,
+    remove: bool,
+    dir: String,
+    name: String,
+) -> Result<()> {
     let mut i = state.inner.lock().unwrap();
     if i.cut.running {
         return Err("書き出し中です。".into());
     }
-    let media = i.media.clone().ok_or("動画を選択してください。")?;
-    let kept = media::ranges(&ranges, media.duration, remove)?;
-    let output = media::output_path(&dir, &name, "mp4")?;
+    let kept = media::dialogue_ranges(&ranges, media.duration, remove)?;
+    let output = media::output_path(&dir, &name, if media.width > 0 { "mp4" } else { "m4a" })?;
     i.cancel = Arc::new(AtomicBool::new(false));
     let cancel = i.cancel.clone();
     i.cut = CutStatus {
@@ -302,6 +319,71 @@ fn cancel_cut(state: State<AppState>) {
         .store(true, Ordering::SeqCst);
 }
 
+#[tauri::command]
+async fn read_subtitle(path: String) -> Result<Value> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = media::local_path(&path)?;
+        let extension = path
+            .extension()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_lowercase();
+        let limit = match extension.as_str() {
+            "vtt" => 20 * 1024 * 1024,
+            "json" => 100 * 1024 * 1024,
+            _ => return Err("VTTまたはプロジェクトJSONを選択してください。".into()),
+        };
+        let size = std::fs::metadata(&path).map_err(|e| e.to_string())?.len();
+        if size > limit {
+            return Err("ファイルのサイズが読込上限を超えています。".into());
+        }
+        let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        Ok(json!({"name":path.file_name().unwrap_or_default().to_string_lossy(),"text":text}))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn inspect_dialogue_media(app: tauri::AppHandle, path: String) -> Result<Value> {
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let path = media::local_path(&path)?;
+        let media = media::probe(&path)?;
+        let bytes = std::fs::metadata(&path).map_err(|e| e.to_string())?.len();
+        Ok::<_, String>((media, bytes))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    app.asset_protocol_scope()
+        .allow_file(&result.0.path)
+        .map_err(|e| e.to_string())?;
+    let mut value = serde_json::to_value(result.0).map_err(|e| e.to_string())?;
+    value["bytes"] = json!(result.1);
+    Ok(value)
+}
+#[tauri::command]
+async fn dialogue_cut(
+    state: State<'_, AppState>,
+    path: String,
+    ranges: Vec<Range>,
+    dir: String,
+    name: String,
+) -> Result<()> {
+    let media =
+        tauri::async_runtime::spawn_blocking(move || media::probe(&media::local_path(&path)?))
+            .await
+            .map_err(|e| e.to_string())??;
+    launch_cut(&state, media, ranges, false, dir, name)
+}
+
+#[tauri::command]
+fn close_app(app: tauri::AppHandle, state: State<AppState>) -> Result<()> {
+    let i = state.inner.lock().unwrap();
+    if i.cut.running || i.upload {
+        return Err("処理の完了・中止後に終了してください。".into());
+    }
+    app.exit(0);
+    Ok(())
+}
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
@@ -321,17 +403,24 @@ fn main() {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let state = window.state::<AppState>();
                 let i = state.inner.lock().unwrap();
+                api.prevent_close();
                 if i.cut.running || i.upload {
-                    api.prevent_close();
                     use tauri::Emitter;
                     let _ = window.emit(
                         "busy-close",
                         "送信または動画書き出しが進行中です。中止してから閉じてください。",
                     );
+                } else {
+                    use tauri::Emitter;
+                    let _ = window.emit("request-close", ());
                 }
             }
         })
         .invoke_handler(tauri::generate_handler![
+            close_app,
+            read_subtitle,
+            inspect_dialogue_media,
+            dialogue_cut,
             bootstrap,
             browse,
             open_media,
