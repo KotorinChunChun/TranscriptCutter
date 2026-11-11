@@ -32,6 +32,7 @@ async function main(){
  for(const model of models){
   let row=run.results.find(r=>r.model===model.id);if(!row){row={model:model.id,status:'not_started'};run.results.push(row);}if(terminal.has(row.status)||row.status==='upload_uncertain')continue;
   let job;if(row.jobId){job=(await api(`/api/jobs/${row.jobId}`)).job;}else{
+   try{await stat(join(out,'PAUSE_NEW_JOBS'));run.pauseReason='新規投入の保留指示。既存の処理は中止していません。';run.pausedAt=new Date().toISOString();await save();console.log('新規ジョブ投入を保留: '+out);return;}catch(error){if(error.code!=='ENOENT')throw error;}
    row.uploadStartedAt=new Date().toISOString();row.status='uploading';await save();console.log(model.id+' 送信開始');
    const q=new URLSearchParams({name:basename(file),engine:model.x_meeting.engineId,model:model.x_meeting.modelId,device:'auto',diarize:'false',clientId:'transcript-cutter-benchmark',workload:'file',start:'0'});
    try{job=(await api('/api/jobs?'+q,{method:'POST',headers:{'Content-Type':'application/octet-stream','Content-Length':String(info.size)},body:createReadStream(file),duplex:'half'})).job;if(!/^[a-f0-9]{32}$/.test(job?.id))throw Error('受付ジョブIDが不正です。');row.jobId=job.id;row.status=job.status;await save();}

@@ -17,3 +17,6 @@ test('upload uses file classification, source File and recognition bounds withou
  globalThis.XMLHttpRequest=class{constructor(){request=this;this.upload={};this.status=200;this.responseText='{"job":{"status":"queued"}}';}open(method,url){this.method=method;this.url=url;}setRequestHeader(){}send(file){sent=file;queueMicrotask(()=>this.onload());}};
  try{const file=new File(['synthetic'],'synthetic.mp4');const client=new SpeechClient();await client.upload(file,{x_meeting:{engineId:'whisper',modelId:'tiny'}},'cpu',false,60,90,()=>{});const url=new URL(request.url,'http://localhost');assert.equal(url.searchParams.get('clientId'),'transcript-cutter');assert.equal(url.searchParams.get('workload'),'file');assert.equal(url.searchParams.get('start'),'60');assert.equal(url.searchParams.get('end'),'90');assert.equal(url.searchParams.get('diarize'),'false');assert.equal(sent,file);}finally{globalThis.XMLHttpRequest=Original;}
 });
+test('incremental reads preserve a stable page target while recognition appends more rows',async()=>{
+ const client=new SpeechClient();let calls=0;client.request=async path=>{calls++;return calls===1?{segments:[{id:3}],next:3,total:4}:{segments:[{id:4}],next:4,total:100};};const updates=await client.segments('job',2,2);assert.deepEqual(updates.map(s=>s.id),[3,4]);assert.equal(calls,2);
+});
