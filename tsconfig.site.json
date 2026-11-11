@@ -1,0 +1,1 @@
+{"extends":"./tsconfig.json","compilerOptions":{"baseUrl":"./site","paths":{"@/*":["./*"]},"allowJs":true},"include":["site/**/*.ts","site/**/*.tsx"],"exclude":[]}
