@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import {SpeechClient} from '../speech-client.ts';
 import {segmentsToVtt} from '../segments-vtt.ts';
 import {parseVtt} from '../src/lib/vtt.ts';
+test('connection selection and subtitle PATCH use the same in-memory client instance without auth headers',async()=>{
+ const original=globalThis.fetch,requests=[];globalThis.fetch=async(url,options={})=>{requests.push({url,...options});return new Response(JSON.stringify(url==='/speech/api/health'?{appId:'meeting-transcriber',protocolVersion:3,authMode:'lan'}:url==='/speech/v1/models'?{data:[]}:{url:'http://192.168.49.12:8769',updated:1}),{status:200,headers:{'Content-Type':'application/json'}});};
+ try{const client=new SpeechClient();await client.configure('http://192.168.49.12:8769','');await client.connect();await client.editSegments('a'.repeat(32),[{id:1,text:'合成'}]);const patch=requests.at(-1);assert.equal(patch.method,'PATCH');assert.deepEqual(JSON.parse(patch.body),{edits:[{id:1,text:'合成'}]});assert.equal(patch.headers['X-TC-Client'],requests[0].headers['X-TC-Client']);assert.equal(patch.headers.Authorization,undefined);assert.equal(patch.headers['X-Local-Token'],undefined);}finally{globalThis.fetch=original;}
+});
 test('segmented result pagination preserves absolute seconds and speaker during VTT handoff',async()=>{
  const client=new SpeechClient();const paths=[];
  client.request=async path=>{paths.push(path);return path.includes('after=0&')?{segments:[{id:2,start:60.125,end:65.5,text:'日本語 😀',speaker:'話者A'}],next:2,total:2}:{segments:[{id:5,start:66,end:70,text:'続き',speaker:'話者B'}],next:5,total:2};};

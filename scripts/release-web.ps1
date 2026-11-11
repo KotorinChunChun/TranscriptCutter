@@ -11,7 +11,7 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $stage 'scripts') -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $taskRoot 'dist-web') -Destination $stage -Recurse
     Copy-Item -LiteralPath (Join-Path $taskRoot 'README.md') -Destination $stage
-    foreach($name in @('serve-web.mjs','Start-Web.ps1')){Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $stage 'scripts')}
+    foreach($name in @('serve-web.mjs','speech-connection.mjs','Start-Web.ps1')){Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $stage 'scripts')}
     $destination=Join-Path $taskRoot "release/TranscriptCutter-web-v$version.zip"
     New-Item -ItemType Directory -Path (Split-Path $destination -Parent) -Force | Out-Null
     Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $destination -Force
