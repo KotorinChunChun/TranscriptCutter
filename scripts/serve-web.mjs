@@ -3,9 +3,9 @@ import http from 'node:http';
 import https from 'node:https';
 import {readFile,stat} from 'node:fs/promises';
 import {resolve,extname,sep} from 'node:path';
-import {pathToFileURL} from 'node:url';
+import {pathToFileURL,fileURLToPath} from 'node:url';
 const allowed=/^\/(?:api\/(?:health|jobs(?:\/[a-fA-F0-9]{32}(?:\/(?:segments|cancel))?)?)|v1\/models)$/;
-export function createWebServer({directory=resolve('dist-web'),speechUrl='http://127.0.0.1:8769',speechToken=''}={}){
+export function createWebServer({directory=fileURLToPath(new URL('../dist-web/',import.meta.url)),speechUrl='http://127.0.0.1:8769',speechToken=''}={}){
  const root=resolve(directory),target=new URL(speechUrl);
  if(!['http:','https:'].includes(target.protocol)||target.username||target.password||target.search||target.hash||target.pathname!=='/')throw Error('文字起こし接続先の形式を確認してください。');
  const server=createServer(async(req,res)=>{
@@ -35,7 +35,7 @@ export function createWebServer({directory=resolve('dist-web'),speechUrl='http:/
  return server;
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
- const registry=await readFile('C:/develop/DevServer/local/servers.json','utf8');
+ let registry='';try{registry=await readFile('C:/develop/DevServer/local/servers.json','utf8');}catch(error){if(error.code!=='ENOENT')throw error;}
  const requested=process.env.TC_WEB_PORT?Number(process.env.TC_WEB_PORT):0;
  if(requested&&(!Number.isInteger(requested)||requested<1024||requested>65535||new RegExp(`\\b${requested}\\b`).test(registry)))throw Error('指定ポートは予約済み、または不正です。');
  const server=createWebServer({speechUrl:process.env.TC_TRANSCRIPTION_URL||'http://127.0.0.1:8769',speechToken:process.env.TC_TRANSCRIPTION_TOKEN||''});
