@@ -15,6 +15,18 @@ const fixture=(mode,received,options={})=>createServer(async(req,res)=>{
  res.end(JSON.stringify({job:{id:'a'.repeat(32),status:req.url.endsWith('/cancel')?'cancelled':'queued'},data:[],segments:[],total:0}));
 });
 const clientHeaders=id=>({'X-TC-Client':id});
+test('delete-job is POST-only, capability-gated and keeps unrelated capability fields private',async()=>{
+ for(const supported of [false,true]){
+  const received=[],upstream=fixture('lan',received,{health:{capabilities:{jobDeletion:supported,secret:'fixture-private'}}}),target=await listen(upstream),web=createWebServer({speechUrl:target}),base=await listen(web),path='/speech/api/jobs/'+'a'.repeat(32)+'/delete';
+  try{
+   assert.equal((await fetch(base+path)).status,404);assert.equal(received.length,0);
+   const health=await(await fetch(base+'/speech/api/health')).json();assert.deepEqual(health.capabilities,{jobDeletion:supported});assert.ok(!JSON.stringify(health).includes('fixture-private'));
+   const response=await fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirm:'delete-job',clientId:'transcript-cutter'})});
+   assert.equal(response.status,supported?200:409);
+   if(supported){assert.equal(received.at(-1).headers['x-local-token'],'fixture-operation-token');assert.match(received.at(-1).body,/delete-job/);}else assert.equal(received.length,1);
+  }finally{await stop(web);await stop(upstream);}
+ }
+});
 test('preparation health is a small allowlist without arbitrary server fields or secrets',async()=>{
  const upstream=fixture('lan',[],{health:{ready:false,reason:'モデル未準備',ffmpegAvailable:true,speechAvailable:false,privateConfig:'fixture-secret',nested:{token:'private'}}}),target=await listen(upstream),web=createWebServer({speechUrl:target}),base=await listen(web);
  try{const response=await fetch(base+'/speech/api/health');const value=await response.json();assert.equal(value.ready,false);assert.equal(value.reason,'モデル未準備');assert.equal(value.ffmpegAvailable,true);assert.equal(value.speechAvailable,false);assert.equal(value.token,undefined);assert.equal(value.privateConfig,undefined);assert.equal(value.nested,undefined);assert.ok(!JSON.stringify(value).includes('fixture-secret'));}finally{await stop(web);await stop(upstream);}

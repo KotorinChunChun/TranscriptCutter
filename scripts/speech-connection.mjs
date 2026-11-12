@@ -57,5 +57,6 @@ export async function connectSpeech(value,key=''){
  const current=result.body,readiness={};
  for(const name of ['ready','speechAvailable','ffmpegAvailable','ffprobeAvailable'])if(typeof current[name]==='boolean')readiness[name]=current[name];
  if(typeof current.reason==='string')readiness.reason=current.reason.slice(0,500);
+ readiness.capabilities={jobDeletion:current.capabilities?.jobDeletion===true};
  return {target,headers,health:{appId:health.appId,protocolVersion:health.protocolVersion,serverVersion:health.serverVersion,executionTarget:health.executionTarget,authMode:mode,...readiness}};
 }

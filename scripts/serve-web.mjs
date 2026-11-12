@@ -5,7 +5,7 @@ import {readFile,stat} from 'node:fs/promises';
 import {resolve,extname,sep} from 'node:path';
 import {pathToFileURL,fileURLToPath} from 'node:url';
 import {connectSpeech,serverUrl,ConnectionError,networkConnectionError} from './speech-connection.mjs';
-const allowed=/^\/(?:api\/(?:health|jobs(?:\/[a-fA-F0-9]{32}(?:\/(?:segments|cancel))?)?)|v1\/models)$/;
+const allowed=/^\/(?:api\/(?:health|jobs(?:\/[a-fA-F0-9]{32}(?:\/(?:segments|cancel|delete))?)?)|v1\/models)$/;
 export function createWebServer({directory=fileURLToPath(new URL('../dist-web/',import.meta.url)),assets,speechUrl='http://127.0.0.1:8769',speechToken=''}={}){
  const root=resolve(directory),initial=serverUrl(speechUrl),sessions=new Map();
  const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(value));};
@@ -43,8 +43,9 @@ export function createWebServer({directory=fileURLToPath(new URL('../dist-web/',
    }catch(error){fail(res,error);}return;
   }
   if(url.pathname.startsWith('/speech/')){
-   const path=url.pathname.slice(7);if(!allowed.test(path)||!['GET','POST','PATCH'].includes(req.method)){res.writeHead(404).end();return;}
+   const path=url.pathname.slice(7);if(!allowed.test(path)||!['GET','POST','PATCH'].includes(req.method)||path.endsWith('/delete')&&req.method!=='POST'){res.writeHead(404).end();return;}
    let session,connection;try{session=sessionFor(req);connection=await handshake(session,path==='/api/health');}catch(error){fail(res,error);return;}
+   if(path.endsWith('/delete')&&connection.health.capabilities?.jobDeletion!==true){fail(res,new ConnectionError('この接続先は履歴削除に未対応です。',409,'job_deletion_unsupported'));return;}
    if(path==='/api/health'){json(res,200,{...connection.health,url:session.url});return;}
    const target=connection.target;
    const headers={host:target.host,...connection.headers};for(const name of ['content-type','content-length'])if(req.headers[name])headers[name]=req.headers[name];

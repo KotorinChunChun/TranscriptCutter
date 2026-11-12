@@ -1,4 +1,5 @@
 import {useEffect,useRef,useState,type ReactNode} from 'react';
+import {createPortal} from 'react-dom';
 import {fileKey} from './browser';
 import {SpeechClient,needsBearerKey,canConfigureConnection,type Job,type Model,type Segment} from './speech-client';
 import {segmentsToVtt} from './segments-vtt';
@@ -11,23 +12,29 @@ import {MediaDrop} from './media-drop';
 import {beginMetric,processingMetrics} from './processing-metrics';
 import {BrowserRecognition} from './browser-recognition';
 import {ServerMeasurements} from './server-measurements';
+import {RecognitionHistory} from './recognition-history';
+import {deletableHistory,historyPageInfo} from './recognition-history-state';
+import {useMediaRangeSeek} from './use-media-range-seek';
 export type RecognitionProps={active:boolean;onTransfer:(value:{vtt:string;name:string;media:File})=>void;onActivity?:(value:{busy:boolean;label:string})=>void};
 export function Recognition(props:RecognitionProps){
- const [source,setSource]=useState('server'),[serverActivity,setServerActivity]=useState({busy:false,label:''}),[browserActivity,setBrowserActivity]=useState({busy:false,label:''});
+ const [source,setSource]=useState('server'),[serverActivity,setServerActivity]=useState({busy:false,label:''}),[browserActivity,setBrowserActivity]=useState({busy:false,label:''}),[historyHost,setHistoryHost]=useState<HTMLDivElement|null>(null);
  const busy=serverActivity.busy||browserActivity.busy;
  useEffect(()=>{props.onActivity?.(source==='server'?serverActivity:browserActivity);},[source,serverActivity,browserActivity,props.onActivity]);
- return <><div className="recognition-source"><label>文字起こしの実行先 <select aria-label="文字起こしの実行先" disabled={busy} value={source} onChange={e=>setSource(e.target.value)}><option value="server">TranscriptionServer</option><option value="browser">このブラウザー（Whisper）</option></select></label></div><div hidden={source!=='server'}><ServerRecognition {...props} active={props.active&&source==='server'} onActivity={setServerActivity}/></div><div hidden={source!=='browser'}><BrowserRecognition {...props} active={props.active&&source==='browser'} onActivity={setBrowserActivity}/></div></>;
+ return <><div className="recognition-source"><label>文字起こしの実行先 <select aria-label="文字起こしの実行先" disabled={busy} value={source} onChange={e=>setSource(e.target.value)}><option value="server">TranscriptionServer</option><option value="browser">このブラウザー（Whisper）</option></select></label><div className="history-toolbar" ref={setHistoryHost}/></div><div hidden={source!=='server'}><ServerRecognition {...props} active={props.active&&source==='server'} historyHost={historyHost} onActivity={setServerActivity}/></div><div hidden={source!=='browser'}><BrowserRecognition {...props} active={props.active&&source==='browser'} onActivity={setBrowserActivity}/></div></>;
 }
 function SetupCard({number,title,summary,active,disabled,onOpen,children}:{number:SetupStep;title:string;summary:string;active:boolean;disabled:boolean;onOpen:()=>void;children:ReactNode}){
  return <section className="setup-card" data-current={active}><button className="setup-toggle" aria-expanded={active} aria-controls={`setup-${number}`} disabled={disabled} onClick={onOpen}><span className="setup-number">{number}</span><span className="setup-label"><strong>{title}</strong>{summary&&<span>{summary}</span>}</span><span aria-hidden="true">{active?'−':'＋'}</span></button><div className="setup-content" id={`setup-${number}`} hidden={!active}>{children}</div></section>;
 }
 const status:Record<string,string>={uploading:'送信中',queued:'待機中',running:'認識中',complete:'完了',error:'エラー',cancelled:'中止',interrupted:'中断'};
 const phases:Record<string,string>={uploading:'送信中',queued:'待機中',preparing:'音声・モデルを準備中',converting:'音声を変換中',loading:'モデルを準備中',loading_model:'モデルを準備中',downloading:'モデルを取得中',diarizing:'話者を識別中',transcribing:'字幕を認識中',complete:'完了',error:'エラー',cancelled:'中止',interrupted:'中断'};
-function ServerRecognition({active,onTransfer,onActivity}:RecognitionProps){
+function ServerRecognition({active,onTransfer,onActivity,historyHost}:RecognitionProps&{historyHost:HTMLDivElement|null}){
  const client=useRef(new SpeechClient()).current,reader=useRef(new RecognitionResults(client)).current;
  const resultList=useRef<HTMLDivElement>(null),player=useRef<HTMLVideoElement>(null),pendingCancel=useRef(false),owned=useRef(new Set<string>()),jobFile=useRef(''),uploadStarted=useRef(0);
  const [file,setFile]=useState<File|null>(null),[url,setUrl]=useState(''),[models,setModels]=useState<Model[]>([]),[modelId,setModelId]=useState(''),[device,setDevice]=useState('auto'),[diarize,setDiarize]=useState(false),[connected,setConnected]=useState(false),[message,setMessage]=useState('接続中'),[error,setError]=useState('');
  const range=useRecognitionRange(file);
+ const rangeSeek=useMediaRangeSeek(file,player);
+ const historyEpoch=useRef(0);
+ const [historyOpen,setHistoryOpen]=useState(false),[historyLoading,setHistoryLoading]=useState(false),[historyError,setHistoryError]=useState(''),[historyPage,setHistoryPage]=useState(0),[historyTotal,setHistoryTotal]=useState(0),[historyHasNext,setHistoryHasNext]=useState(false),[canDeleteHistory,setCanDeleteHistory]=useState(false),[pendingDelete,setPendingDelete]=useState<Job|null>(null),[deleting,setDeleting]=useState(false);
  const [job,setJob]=useState<Job|null>(null),[segments,setSegments]=useState<Segment[]>([]),[upload,setUpload]=useState(false),[progress,setProgress]=useState(0),[jobs,setJobs]=useState<Job[]>([]),[search,setSearch]=useState('');
  const [serverUrl,setServerUrl]=useState('http://127.0.0.1:8769/'),[connectedUrl,setConnectedUrl]=useState('http://127.0.0.1:8769/'),[serverKey,setServerKey]=useState(''),[showConnection,setShowConnection]=useState(false),[connecting,setConnecting]=useState(false);
  const [authMode,setAuthMode]=useState<string|null>(null),[keyRequired,setKeyRequired]=useState(false);
@@ -42,11 +49,11 @@ function ServerRecognition({active,onTransfer,onActivity}:RecognitionProps){
  useEffect(()=>{onActivity?.({busy,label:activityLabel});},[busy,activityLabel,onActivity]);
  useEffect(()=>{if(!busy)return;setClock(Date.now());const timer=setInterval(()=>setClock(Date.now()),1000);return()=>clearInterval(timer);},[busy]);
  const chooseModel=(id:string,list=models)=>{const m=list.find(m=>m.id===id);setModelId(id);setDevice(m?.x_meeting.defaultProcessingMethod??m?.x_meeting.processingMethods.find(p=>p.id==='auto')?.id??m?.x_meeting.processingMethods[0]?.id??'');};
- const history=async()=>{try{const v=await client.request('/api/jobs?limit=50&offset=0&clientId=transcript-cutter&workload=file');setJobs(v.jobs);}catch(e){setError(String(e));}};
- const connect=async()=>{setError('');setConnecting(true);try{const v=await client.connect(),config=await client.connectionSettings();setConnectedUrl(config.url);setServerUrl(config.url);setModels(v.models);if(!busy){if(!v.models.some(m=>m.id===modelId))chooseModel(v.models.find(m=>m.id==='whisper/base')?.id??v.models[0]?.id??'',v.models);setSetupStep(file&&v.models.length&&v.health.ready!==false?4:2);}setServerReady(v.health.ready);setServerReason(v.health.reason??'');setAuthMode(v.health.authMode);setKeyRequired(v.health.authMode==='bearer');setConnected(true);setShowConnection(false);setMessage(`接続済み ${v.health.serverVersion??''}・${v.health.authMode==='lan'?'LAN（キー不要）':v.health.authMode==='bearer'?'Bearer':'このPC（キー不要）'}`);await history();}catch(e){setConnected(false);setServerReady(undefined);setModels([]);setMessage('未接続');connectionError(e);}finally{setConnecting(false);}};
+ const history=async(page=0)=>{const epoch=++historyEpoch.current;setHistoryLoading(true);setHistoryError('');try{const raw=await client.request(`/api/jobs?limit=50&offset=${page*50}&clientId=transcript-cutter&workload=file`);if(epoch!==historyEpoch.current)return;const v=historyPageInfo(raw,page);setJobs(v.jobs);setHistoryPage(page);setHistoryTotal(v.total);setHistoryHasNext(v.hasNext);}catch(e){if(epoch===historyEpoch.current)setHistoryError(String(e));}finally{if(epoch===historyEpoch.current)setHistoryLoading(false);}};
+ const connect=async()=>{setError('');setConnecting(true);try{const v=await client.connect(),config=await client.connectionSettings();setConnectedUrl(config.url);setServerUrl(config.url);setModels(v.models);if(!busy){if(!v.models.some(m=>m.id===modelId))chooseModel(v.models.find(m=>m.id==='whisper/base')?.id??v.models[0]?.id??'',v.models);setSetupStep(file&&v.models.length&&v.health.ready!==false?4:2);}setServerReady(v.health.ready);setServerReason(v.health.reason??'');setCanDeleteHistory(v.health.capabilities?.jobDeletion===true);setAuthMode(v.health.authMode);setKeyRequired(v.health.authMode==='bearer');setConnected(true);setShowConnection(false);setMessage(`接続済み ${v.health.serverVersion??''}・${v.health.authMode==='lan'?'LAN（キー不要）':v.health.authMode==='bearer'?'Bearer':'このPC（キー不要）'}`);await history();}catch(e){setConnected(false);setCanDeleteHistory(false);setServerReady(undefined);setModels([]);setMessage('未接続');connectionError(e);}finally{setConnecting(false);}};
  const clearJob=()=>{reader.select('');setJob(null);setSegments([]);setUpdatedAt(0);setPollError('');setPage(0);jobFile.current='';};
- const applyConnection=async()=>{if(upload||connecting||!canConfigureConnection(busy,connectedUrl,serverUrl))return;const sameServer=canConfigureConnection(true,connectedUrl,serverUrl);setConnecting(true);setConnected(false);setError('');if(!busy&&!sameServer){clearJob();setJobs([]);owned.current.clear();}try{await client.configure(serverUrl,serverKey);setServerKey('');await connect();}catch(e){setModels([]);setMessage('未接続');connectionError(e);}finally{setServerKey('');setConnecting(false);}};
- useEffect(()=>{void client.connectionSettings().then(config=>{setServerUrl(config.url);return connect();}).catch(e=>{setError(String(e));setMessage('未接続');setShowConnection(true);});return()=>reader.select('');},[]);
+ const applyConnection=async()=>{if(upload||connecting||!canConfigureConnection(busy,connectedUrl,serverUrl))return;const sameServer=canConfigureConnection(true,connectedUrl,serverUrl);setConnecting(true);setConnected(false);setError('');if(!busy&&!sameServer){clearJob();historyEpoch.current++;setJobs([]);setCanDeleteHistory(false);owned.current.clear();}try{await client.configure(serverUrl,serverKey);setServerKey('');await connect();}catch(e){setModels([]);setMessage('未接続');connectionError(e);}finally{setServerKey('');setConnecting(false);}};
+ useEffect(()=>{void client.connectionSettings().then(config=>{setServerUrl(config.url);return connect();}).catch(e=>{setError(String(e));setMessage('未接続');setShowConnection(true);});return()=>{reader.select('');historyEpoch.current++;};},[]);
  useEffect(()=>{if(!active)player.current?.pause();},[active]);
  useEffect(()=>()=>{if(url)URL.revokeObjectURL(url);},[url]);
  const load=(f:File)=>{if(busy)return;if(!/\.(mp4|mov|mkv|webm|avi|m4v|wmv|mts|m2ts|wav|mp3|m4a|ogg|flac|aac)$/i.test(f.name)){setError('動画・音声を選択してください。');return;}setFile(f);setUrl(URL.createObjectURL(f));setSetupStep(4);setError('');if(jobFile.current&&jobFile.current!==fileKey(f)||job?.fileName&&job.fileName!==f.name)clearJob();};
@@ -65,20 +72,23 @@ function ServerRecognition({active,onTransfer,onActivity}:RecognitionProps){
  const currentStep=showConnection?1:setupStep,hasResult=!!job||upload;
  const sourceMatches=!!file&&(!job?.fileName||job.fileName===file.name)&&(!jobFile.current||jobFile.current===fileKey(file));
  const canCancel=upload||isActiveJob(job)&&!!job&&(owned.current.has(job.id)||job.clientId==='transcript-cutter');
+ const openHistoryJob=async(selected:Job)=>{if(busy)return;reader.select(selected.id);setSegments([]);setUpdatedAt(0);setPage(0);setJob(selected);setHistoryOpen(false);setPendingDelete(null);openStep(4);jobFile.current='';await refresh();};
+ const deleteHistoryJob=async()=>{const target=pendingDelete;if(!target||busy||deleting||!deletableHistory(target,canDeleteHistory))return;setDeleting(true);setHistoryError('');try{await client.deleteJob(target.id);if(job?.id===target.id){clearJob();setSetupStep(file?4:3);}setPendingDelete(null);await history(jobs.length===1&&historyPage>0?historyPage-1:historyPage);}catch(e){setHistoryError(`削除を完了できませんでした。${String(e)}`);}finally{setDeleting(false);}};
  return <section className={`recognition guided-recognition ${hasResult?'has-result':''}`}>
+ {historyHost&&createPortal(<button hidden={!active} disabled={!connectionCurrent} onClick={()=>{setHistoryOpen(true);setPendingDelete(null);void history();}}>履歴</button>,historyHost)}
+ {historyOpen&&active&&<RecognitionHistory jobs={jobs} total={historyTotal} page={historyPage} hasNext={historyHasNext} loading={historyLoading} error={historyError} busy={busy} canDelete={canDeleteHistory} pendingDelete={pendingDelete} deleting={deleting} onClose={()=>{setHistoryOpen(false);setPendingDelete(null);}} onRefresh={()=>void history(historyPage)} onPage={page=>void history(page)} onSelect={selected=>void openHistoryJob(selected)} onDelete={selected=>{if(deletableHistory(selected,canDeleteHistory)){setHistoryError('');setPendingDelete(selected);}}} onCancelDelete={()=>{setPendingDelete(null);setHistoryError('');}} onConfirmDelete={()=>void deleteHistoryJob()}/>}
  <header className="recognition-heading"><h1>文字起こし</h1><span role="status">{connecting?'接続中':busy?'処理中':job?.status==='complete'?'認識完了':''}</span></header>
  {error&&<p role="alert" className="error">{error}</p>}
  <div className="panes"><section className="setup-column" aria-label="文字起こしの準備">
  <SetupCard number={1} title="サーバー接続" summary={connecting?'確認中':connectionCurrent?connectedUrl:connected?'変更未反映':'未接続'} active={currentStep===1} disabled={connecting} onOpen={()=>openStep(1)}>
-  <div className="connection-settings"><label>接続先 <input type="url" aria-label="文字起こしサーバーURL" value={serverUrl} disabled={busy||connecting} onChange={e=>{setServerUrl(e.target.value);setServerKey('');setKeyRequired(false);setAuthMode(null);}}/></label>
-  <span role="status" aria-label="接続方式">{connecting?'接続中':connectionCurrent?authMode==='lan'?'LAN（キー不要）':authMode==='bearer'?'Bearer':'このPC（キー不要）':connected?'変更未反映':message}</span>
+  <div className="connection-settings"><input type="url" aria-label="文字起こしサーバーURL" value={serverUrl} disabled={busy||connecting} onChange={e=>{setServerUrl(e.target.value);setServerKey('');setKeyRequired(false);setAuthMode(null);}}/>
+
   {keyRequired&&<label>接続キー（Bearer認証のみ） <input type="password" aria-label="サーバー接続キー" autoComplete="off" value={serverKey} disabled={upload||connecting} onChange={e=>setServerKey(e.target.value)}/></label>}
   <button className="primary-action" disabled={upload||connecting||!canConfigureConnection(busy,connectedUrl,serverUrl)} onClick={()=>void applyConnection()}>接続を確認</button></div>
-  {connectionCurrent&&!busy&&<button className="next-step primary-action" onClick={()=>openStep(2)}>次へ：モデルと処理方式</button>}
+
  </SetupCard>
  <SetupCard number={2} title="モデルと処理方式" summary={!connectionCurrent?'接続待ち':serverReady===false||!models.length?'準備が必要':model?`${model.x_meeting.label}・${model.x_meeting.processingMethods.find(m=>m.id===device)?.label??'処理方式を選択'}`:'モデルを選択'} active={currentStep===2} disabled={busy||connecting||!workflow.allowed[2]} onOpen={()=>openStep(2)}>
-  <div className="preparation-status" role="status">{serverReady===false||!models.length?serverReason||'利用可能なモデルがありません':`対応モデル ${models.length}件`}</div>
-  <div className="row server-actions">{manageLink&&<a className={`setup-link ${serverReady===false||!models.length?'primary-action':''}`} href={manageLink} target="_blank" rel="noopener noreferrer">サーバー管理を開く ↗</a>}<button disabled={busy||connecting} onClick={()=>void connect()}>準備状況を更新</button></div>
+  <div className="row server-actions">{manageLink&&<a className={`setup-link ${serverReady===false||!models.length?'primary-action':''}`} href={manageLink} target="_blank" rel="noopener noreferrer">サーバー管理を開く ↗</a>}<button disabled={busy||connecting} onClick={()=>void connect()}>準備状況を更新</button><div className="preparation-status" role="status">{serverReady===false||!models.length?serverReason||'利用可能なモデルがありません':`対応モデル ${models.length}件`}</div></div>
   <div className="model-fields"><label className="speaker-choice"><input type="checkbox" checked={diarize} disabled={busy} onChange={e=>setDiarize(e.target.checked)}/>話者識別</label>
   <label>文字起こしモデル <select aria-label="認識モデル" value={modelId} disabled={!models.length||busy} onChange={e=>chooseModel(e.target.value)}>{!models.length&&<option value="">未準備</option>}{models.map(m=><option key={m.id} value={m.id}>{m.x_meeting.engineLabel} / {m.x_meeting.label}{m.x_meeting.integratedDiarization?'（話者識別内蔵）':''}{m.x_meeting.available===false||m.x_meeting.runtimeReady===false?'（準備が必要）':''}</option>)}</select></label>
   <label>処理方式 <select aria-label="処理方式" disabled={busy||!model} value={device} onChange={e=>setDevice(e.target.value)}>{(model?.x_meeting.processingMethods??[]).map(m=><option key={m.id} value={m.id}>{m.label}</option>)}</select></label>
@@ -91,11 +101,11 @@ function ServerRecognition({active,onTransfer,onActivity}:RecognitionProps){
  </SetupCard>
  <SetupCard number={4} title="文字起こし" summary={busy?'処理中':job?status[job.status]??job.status:''} active={currentStep===4} disabled={connecting||!workflow.allowed[4]&&!job} onOpen={()=>openStep(4)}>
 
-  <RecognitionRangeControls range={range} disabled={busy||!file}/>
+  <RecognitionRangeControls range={range} disabled={busy||!file} onSeek={rangeSeek.seek}/>
   <button className="primary-action start-recognition" disabled={!workflow.canStart||connecting||!range.valid} onClick={()=>void recognize()}>文字起こし開始</button>
  </SetupCard>
- {url&&<video ref={player} controls src={url} preload="metadata" onError={()=>setError('この形式はブラウザーでプレビューできません。')}/>}
- <details className="recognition-history"><summary>履歴から再開</summary><div className="row"><button disabled={!connected||busy} onClick={()=>void history()}>履歴を更新</button><select aria-label="認識履歴" value={job?.id??''} disabled={busy} onChange={async e=>{if(busy)return;const selected=jobs.find(j=>j.id===e.target.value);if(!selected)return;reader.select(selected.id);setSegments([]);setUpdatedAt(0);setPage(0);setJob(selected);openStep(4);jobFile.current='';await refresh();}}><option value="">認識履歴</option>{job&&!jobs.some(j=>j.id===job.id)&&<option value={job.id}>{job.fileName} / {status[job.status]??job.status}</option>}{jobs.map(j=><option key={j.id} value={j.id}>{j.fileName} / {String(j.engine??'')} / {String(j.modelId??'')} / {j.id===job?.id?status[job.status]??job.status:status[j.status]??j.status}</option>)}</select></div></details>
+ {url&&<video ref={player} controls src={url} preload="metadata" onLoadedMetadata={rangeSeek.loaded} onError={()=>setError('この形式はブラウザーでプレビューできません。')}/>}
+
  </section>
  {hasResult&&<section className="recognition-output" aria-label="認識結果"><div className="row result-tools"><button disabled={upload||connecting} onClick={()=>void connect()}>再接続</button><button disabled={!job||upload} onClick={()=>void refresh(true)}>結果を再取得</button>{canCancel&&<button className="cancel-action" onClick={()=>void cancel()}>認識中止</button>}</div>
  <section className="recognition-progress" aria-label="文字起こしの進捗"><strong aria-live="polite">{upload?`送信 ${Math.round(progress*100)}%`:job?`${status[job.status]??job.status}${phaseLabel===(status[job.status]??job.status)?'':'・'+phaseLabel}・${Math.round(position.fraction*100)}%`:'未実行'}</strong>

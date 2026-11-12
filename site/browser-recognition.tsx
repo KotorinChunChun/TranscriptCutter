@@ -5,6 +5,7 @@ import {whisperSegments} from './browser-whisper-config';
 import {finishEstimate} from './recognition-options';
 import {useRecognitionRange,RecognitionRangeControls} from './recognition-range-controls';
 import {MediaDrop} from './media-drop';
+import {useMediaRangeSeek} from './use-media-range-seek';
 import {beginMetric,measure,processingMetrics} from './processing-metrics';
 import {recognitionProgress,transcriptionName} from './recognition-state';
 import {segmentsToVtt} from './segments-vtt';
@@ -15,6 +16,7 @@ export function BrowserRecognition({active,onTransfer,onActivity}:RecognitionPro
  const [modelId,setModelId]=useState('tiny'),[installed,setInstalled]=useState<Record<string,boolean>>({}),[working,setWorking]=useState(false),[installing,setInstalling]=useState(false),[message,setMessage]=useState(''),[error,setError]=useState('');
  const [file,setFile]=useState<File|null>(null),[url,setUrl]=useState(''),[job,setJob]=useState<Job|null>(null),[segments,setSegments]=useState<Segment[]>([]),[now,setNow]=useState(Date.now());
  const range=useRecognitionRange(file);
+ const rangeSeek=useMediaRangeSeek(file,player);
  const model=browserWhisperModels.find(m=>m.id===modelId)!,position=recognitionProgress(job),estimate=finishEstimate(job,now);
  const supported=typeof Worker!=='undefined'&&typeof WebAssembly!=='undefined'&&typeof OfflineAudioContext!=='undefined'&&!!globalThis.caches;
  const check=async()=>{const states=await Promise.all(browserWhisperModels.map(async m=>[m.id,await browserWhisperInstalled(m)] as const));setInstalled(Object.fromEntries(states));};
@@ -57,7 +59,7 @@ export function BrowserRecognition({active,onTransfer,onActivity}:RecognitionPro
  {!supported&&<p role="alert" className="error">このブラウザーでは必要な音声処理・キャッシュ機能を利用できません。</p>}{error&&<p role="alert" className="error">{error}</p>}
  <div className="panes"><section className="setup-column"><div className="setup-card setup-content"><h2>モデル</h2><div className="model-fields"><label>ブラウザーモデル<select aria-label="ブラウザー認識モデル" disabled={working} value={modelId} onChange={e=>{engine.stop();setModelId(e.target.value);setMessage('');}}>{browserWhisperModels.map(m=><option key={m.id} value={m.id}>{m.label}（{installed[m.id]?'導入済み':'未導入'}）</option>)}</select></label><span>処理方式：このブラウザーのCPU（WASM）</span><button className="primary-action" disabled={working||!supported} onClick={()=>void install()}>{installed[modelId]?'モデルを再点検・再導入':'このブラウザーへ導入'}</button></div><p role="status">{message}</p></div>
  <div className="setup-card setup-content"><MediaDrop disabled={working} onLoad={load} label="ブラウザー認識の動画ドロップ領域"/>
- <RecognitionRangeControls range={range} disabled={working||!file} prefix="ブラウザー認識"/>
- <button className="primary-action start-recognition" disabled={working||!file||!installed[modelId]||!supported||!range.valid} onClick={()=>void recognize()}>ブラウザーで文字起こし開始</button></div>{url&&<video ref={player} controls src={url} preload="metadata"/>}
+ <RecognitionRangeControls range={range} disabled={working||!file} prefix="ブラウザー認識" onSeek={rangeSeek.seek}/>
+ <button className="primary-action start-recognition" disabled={working||!file||!installed[modelId]||!supported||!range.valid} onClick={()=>void recognize()}>ブラウザーで文字起こし開始</button></div>{url&&<video ref={player} controls src={url} preload="metadata" onLoadedMetadata={rangeSeek.loaded}/>}
  </section><section className="recognition-output">{working&&<button className="cancel-action" onClick={()=>controller.current?.abort()}>{installing?'導入を中止':'認識中止'}</button>}{job&&<><section className="recognition-progress"><strong>{job.status==='complete'?'完了':job.status==='running'?'処理中':job.status==='cancelled'?'中止':'エラー'}・{Math.round(position.fraction*100)}%</strong><progress aria-label="ブラウザー認識の進捗" max={1} value={position.fraction}/><p aria-label="ブラウザー認識の終了見込み">{estimate?`認識終了見込み（推定） ${new Date(estimate.finishAt).toLocaleTimeString('ja-JP')}・残り約${Math.ceil(estimate.remainingSeconds)}秒`:job.status==='running'?'終了見込み：進捗が得られるまで算出待ち':''}</p><p>確定字幕 {segments.length}件</p></section><div className="row"><button className="primary-action" disabled={working||job.status!=='complete'||!segments.length||!file||sourceKey.current!==fileKey(file)} onClick={()=>{if(file){player.current?.pause();onTransfer({media:file,vtt:segmentsToVtt(segments),name:outputName()});}}}>結果を工程2へ追加</button><button disabled={!segments.length} onClick={()=>download()}>{job.status==='complete'?'VTTを保存':'部分VTTを保存'}</button><button onClick={()=>download(true)}>処理記録を保存</button></div><div className="results"><table><thead><tr><th>時刻</th><th>本文</th></tr></thead><tbody>{segments.map(s=><tr key={s.id}><td><button onClick={()=>{if(player.current)player.current.currentTime=s.start;}}>{s.start.toFixed(3)}</button></td><td>{s.text}</td></tr>)}</tbody></table></div></>}</section></div></section>;
 }
