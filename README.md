@@ -8,7 +8,11 @@
 
 ## 起動
 
-Node.js 22以降とPowerShell 7が必要です。配布ZIPは全体を展開してください。文字起こしは既存TranscriptionServerを起動済みの状態で使用します。本アプリは推論サーバーを起動・停止しません。
+Windows x64用の単独EXEは `release/TranscriptCutter-web-v0.1.0.exe` です。EXEだけをコピーしてダブルクリックすると、既定ブラウザーでWeb版を開きます。Node.jsやPowerShellの別途インストール、ZIPの展開は不要です。起動したコンソールを閉じるかCtrl+Cで停止します。画面の資産とライセンスはEXEへ内蔵しています。`--version`で版を確認でき、`--no-open`ではブラウザーを自動で開きません。EdgeまたはChromeを使用してください。
+
+文字起こしには既存TranscriptionServerが別途必要です。工程2のVTT編集・動画カットはブラウザー内で動きます。本アプリは推論サーバーやモデルを内蔵せず、起動・停止しません。
+
+配布ZIPを使用する場合はNode.js 22以降とPowerShell 7が必要です。ZIPは全体を展開してから次を実行します。
 
 ```pwsh
 pwsh -File scripts/Start-Web.ps1
@@ -78,7 +82,11 @@ npm run test:site
 npm run build:web
 npm run dev
 pwsh -File scripts/release-web.ps1
+npm run build:exe
+npm run check:exe
 ```
+
+単独EXEのビルドはWindows x64 / Node.js 22とWindows SDKのsigntoolを使用します。既存Nodeの署名を除去し、アプリの版・アイコン・内蔵資産を設定します。生成EXEは未署名です。異なるSDKの場所はビルド時だけ `TC_SIGNTOOL` で指定できます。ライセンス全文は起動中の `/licenses.txt` で閲覧できます。
 
 `check-web-browser.mjs`は明示許可されたメディアを用いる受入専用です。通常の自動試験では実データ・実サーバーを使いません。実行する場合は `TC_ACCEPTANCE_VIDEO` と `TC_ACCEPTANCE_URL` を明示し、必要なら既存の検証ジョブIDを `TC_ACCEPTANCE_JOB` へ指定します。
 

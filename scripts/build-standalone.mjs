@@ -1,0 +1,45 @@
+import {readFile,writeFile,mkdir,copyFile,access} from 'node:fs/promises';
+import {resolve,dirname} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {execFileSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
+import {build} from 'esbuild';
+import {rcedit} from 'rcedit';
+import {inject} from 'postject';
+
+const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
+process.chdir(root);
+if(process.platform!=='win32'||process.arch!=='x64'||!process.version.startsWith('v22.'))throw Error('Windows x64 / Node.js 22でビルドしてください。');
+const {version}=JSON.parse(await readFile(resolve(root,'package.json'),'utf8'));
+const work=resolve(root,'runtime','standalone-build'),out=resolve(root,'release',`TranscriptCutter-web-v${version}.exe`);
+await mkdir(work,{recursive:true});await mkdir(dirname(out),{recursive:true});
+execFileSync(process.execPath,[resolve(root,'scripts/build-web.mjs')],{stdio:'inherit'});
+const assets={};for(const name of ['index.html','app.js','app.css'])assets['/'+name]=(await readFile(resolve(root,'dist-web',name))).toString('base64');
+let licenses='TranscriptCutter Web '+version+'\n\nNode.js source: https://nodejs.org/download/release/'+process.version+'/\n';
+const lock=JSON.parse(await readFile(resolve(root,'package-lock.json'),'utf8'));
+const components=[['Node.js',resolve(dirname(process.execPath),'LICENSE')],...['react','react-dom','scheduler','lucide-react','mediabunny'].map(name=>[name,resolve(root,'node_modules',name,'LICENSE')])];
+for(const [name,path] of components){const pkg=lock.packages['node_modules/'+name];licenses+='\n===== '+name+(pkg?' '+pkg.version+'\nSource: '+pkg.resolved:'')+' =====\n'+await readFile(path,'utf8')+'\n';}
+assets['/licenses.txt']=Buffer.from(licenses).toString('base64');
+const entry=`import {startStandalone} from ${JSON.stringify(resolve(root,'scripts/standalone-web.mjs'))};
+const assets=new Map(Object.entries(${JSON.stringify(assets)}).map(([path,body])=>[path,Buffer.from(body,'base64')]));
+process.title='TranscriptCutter Web v${version}';
+startStandalone({assets,version:${JSON.stringify(version)}}).then(server=>{
+ if(!server)return;
+ const close=()=>{server.closeAllConnections();server.close(()=>process.exit(0));};
+ process.on('SIGINT',close);process.on('SIGTERM',close);
+}).catch(error=>{console.error('起動できません: '+(error.code||error.message));process.exitCode=1;});`;
+const main=resolve(work,'main.cjs');
+await build({stdin:{contents:entry,resolveDir:root,sourcefile:'standalone-entry.mjs'},bundle:true,platform:'node',target:'node22',format:'cjs',outfile:main,define:{'import.meta.url':JSON.stringify('file:///transcript-cutter-bundle.mjs')}});
+const config=resolve(work,'sea-config.json'),blob=resolve(work,'sea-prep.blob');
+await writeFile(config,JSON.stringify({main,output:blob,disableExperimentalSEAWarning:true,useSnapshot:false,useCodeCache:false}));
+execFileSync(process.execPath,['--experimental-sea-config',config],{stdio:'inherit'});
+await copyFile(process.execPath,out);
+const signTool=process.env.TC_SIGNTOOL||'C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/signtool.exe';
+await access(signTool);
+execFileSync(signTool,['remove','/s',out],{stdio:'inherit'});
+await rcedit(out,{'file-version':version,'product-version':version,'version-string':{ProductName:'TranscriptCutter',FileDescription:'TranscriptCutter Web',OriginalFilename:`TranscriptCutter-web-v${version}.exe`,InternalName:'TranscriptCutter',CompanyName:'',LegalCopyright:'Node.js and bundled component licenses: /licenses.txt'},icon:resolve(root,'src-tauri/icons/icon.ico'),'requested-execution-level':'asInvoker'});
+await inject(out,'NODE_SEA_BLOB',await readFile(blob),{sentinelFuse:'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2'});
+const binary=await readFile(out);
+const receipt={version,node:process.version,platform:'win32-x64',file:out,bytes:binary.length,sha256:createHash('sha256').update(binary).digest('hex'),assets:Object.fromEntries(Object.entries(assets).map(([path,base64])=>[path,createHash('sha256').update(Buffer.from(base64,'base64')).digest('hex')]))};
+await writeFile(resolve(root,'release',`TranscriptCutter-web-v${version}.exe.json`),JSON.stringify(receipt,null,2)+'\n');
+console.log(JSON.stringify(receipt,null,2));
