@@ -26,3 +26,14 @@ test('only an identified Bearer challenge can reveal the key field',async()=>{
 test('running jobs may refresh credentials only on the same configured URL',()=>{
  assert.equal(canConfigureConnection(true,'http://192.168.49.105:8769/','http://192.168.49.105:8769'),true);assert.equal(canConfigureConnection(true,'http://192.168.49.105:8769/','http://192.168.49.12:8769'),false);assert.equal(canConfigureConnection(true,'http://192.168.49.105:8769/','invalid'),false);assert.equal(canConfigureConnection(false,'http://192.168.49.105:8769/','http://127.0.0.1:8769/'),true);
 });
+
+test('Nemotron ASR is selectable from the catalog without admitting diarization or 30B models',async()=>{
+ const model=(engineId,modelId,task)=>({id:engineId+'/'+modelId,x_meeting:{engineId,modelId,engineLabel:engineId,label:modelId,...(task===undefined?{}:{task}),integratedDiarization:false,diarization:true,processingMethods:[{id:'cpu',label:'CPU'}]}});
+ const asr=model('nemotron-asr','nemotron-3.5-asr-streaming-0.6b','transcription');
+ const legacy=['whisper','haas','qwen','reazon','parakeet'].map(engine=>model(engine,'legacy'));
+ const client=new SpeechClient();client.request=async path=>path==='/api/health'?{appId:'meeting-transcriber',protocolVersion:3,authMode:'lan'}:{data:[...legacy,asr,model('diarization','nemotron-3','diarization'),model('nemotron-transcribe','30b','transcription'),model('nemotron-asr','separation','diarization')]};
+ const {models}=await client.connect();assert.deepEqual(models.map(m=>m.id),[...legacy.map(m=>m.id),asr.id]);const selected=models.find(m=>m.id===asr.id);assert.equal(selected.x_meeting.integratedDiarization,false);assert.equal(selected.x_meeting.diarization,true);
+ const Original=globalThis.XMLHttpRequest;let request;
+ globalThis.XMLHttpRequest=class{constructor(){request=this;this.upload={};this.status=200;this.responseText='{"job":{"status":"queued"}}';}open(method,url){this.method=method;this.url=url;}setRequestHeader(){}send(file){this.file=file;queueMicrotask(()=>this.onload());}};
+ try{const file=new File(['synthetic'],'fixture.wav');await client.upload(file,selected,'cpu',true,60,90,()=>{});const query=new URL(request.url,'http://localhost').searchParams;assert.equal(query.get('engine'),'nemotron-asr');assert.equal(query.get('model'),'nemotron-3.5-asr-streaming-0.6b');assert.equal(query.get('diarize'),'true');assert.equal(query.get('device'),'cpu');assert.equal(query.get('workload'),'file');assert.equal(query.get('start'),'60');assert.equal(query.get('end'),'90');assert.equal(query.has('language'),false);assert.equal(request.file,file);}finally{globalThis.XMLHttpRequest=Original;}
+});

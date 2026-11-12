@@ -1,4 +1,6 @@
-# TranscriptCutter Web v0.2611.6
+# TranscriptCutter Web v0.2611.7
+
+サーバーが導入済みモデルとして返すNemotron 3.5 ASR Streaming 0.6Bにも対応します。単独話者分離モデルと30BのNemotron Transcribeは候補へ含めません。新モデルの実サーバー認識・GPU・性能は未確認です。
 
 文字起こし、VTTの比較・統合・会話編集、動画カットをブラウザーで行うWebアプリです。工程1は既存TranscriptionServer、工程2は元サイトVTT Dialogue 3.4のReact/Mediabunny/WebCodecsを利用します。
 
