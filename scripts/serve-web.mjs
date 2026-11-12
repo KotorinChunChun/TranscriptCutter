@@ -6,7 +6,7 @@ import {resolve,extname,sep} from 'node:path';
 import {pathToFileURL,fileURLToPath} from 'node:url';
 import {connectSpeech,serverUrl,ConnectionError,networkConnectionError} from './speech-connection.mjs';
 const allowed=/^\/(?:api\/(?:health|jobs(?:\/[a-fA-F0-9]{32}(?:\/(?:segments|cancel))?)?)|v1\/models)$/;
-export function createWebServer({directory=fileURLToPath(new URL('../dist-web/',import.meta.url)),speechUrl='http://127.0.0.1:8769',speechToken=''}={}){
+export function createWebServer({directory=fileURLToPath(new URL('../dist-web/',import.meta.url)),assets,speechUrl='http://127.0.0.1:8769',speechToken=''}={}){
  const root=resolve(directory),initial=serverUrl(speechUrl),sessions=new Map();
  const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(value));};
  const fail=(res,error)=>json(res,error instanceof ConnectionError?error.status:502,{error:error instanceof ConnectionError?error.message:'接続操作に失敗しました。',code:error instanceof ConnectionError?error.code:'connection_failed'});
@@ -59,15 +59,17 @@ export function createWebServer({directory=fileURLToPath(new URL('../dist-web/',
   }
   if(req.method!=='GET'&&req.method!=='HEAD'){res.writeHead(405).end();return;}
   try{
-   const requested=decodeURIComponent(url.pathname);let path=resolve(root,'.'+requested);if(path!==root&&!path.startsWith(root+sep))throw Error();if((await stat(path)).isDirectory())path=resolve(path,'index.html');
-   const body=await readFile(path);const type={'.html':'text/html; charset=utf-8','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.ico':'image/x-icon','.wasm':'application/wasm'}[extname(path)]??'application/octet-stream';
+   const requested=decodeURIComponent(url.pathname);let path,body;
+   if(assets){path=requested==='/'?'/index.html':requested;if(!assets.has(path))throw Error();body=assets.get(path);}
+   else{path=resolve(root,'.'+requested);if(path!==root&&!path.startsWith(root+sep))throw Error();if((await stat(path)).isDirectory())path=resolve(path,'index.html');body=await readFile(path);}
+   const type={'.html':'text/html; charset=utf-8','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.ico':'image/x-icon','.wasm':'application/wasm'}[extname(path)]??'application/octet-stream';
    res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob:; worker-src 'self' blob:; object-src 'none'; frame-src 'none'; base-uri 'self'");
    res.writeHead(200,{'Content-Type':type});res.end(req.method==='HEAD'?undefined:body);
   }catch{res.writeHead(404).end('見つかりません。');}
  });
  return server;
 }
-if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
+async function main(){
  let registry='';try{registry=await readFile('C:/develop/DevServer/local/servers.json','utf8');}catch(error){if(error.code!=='ENOENT')throw error;}
  const requested=process.env.TC_WEB_PORT?Number(process.env.TC_WEB_PORT):0;
  if(requested&&(!Number.isInteger(requested)||requested<1024||requested>65535||new RegExp(`\\b${requested}\\b`).test(registry)))throw Error('指定ポートは予約済み、または不正です。');
@@ -79,3 +81,4 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
  console.log(`TranscriptCutter v0.1.0: http://127.0.0.1:${port}/`);
  const close=()=>server.close(()=>process.exit(0));process.on('SIGTERM',close);process.on('SIGINT',close);
 }
+if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href)main().catch(error=>{console.error(error.message);process.exitCode=1;});
