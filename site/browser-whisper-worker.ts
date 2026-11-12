@@ -1,4 +1,4 @@
-import {browserWhisperModels,whisperCache} from './browser-whisper-config';
+import {browserWhisperModels,whisperCache,whisperLoadingPolicy} from './browser-whisper-config';
 const worker=globalThis as unknown as {onmessage:((event:MessageEvent)=>void)|null;postMessage:(value:unknown)=>void};
 let pipeline:any=null;
 worker.onmessage=async({data})=>{
@@ -9,11 +9,11 @@ worker.onmessage=async({data})=>{
    const runtime=data.runtime as string;
    const lib=await import(/* @vite-ignore */ runtime);
    const cache=await caches.open(whisperCache);
-   lib.env.allowLocalModels=false;lib.env.useBrowserCache=false;lib.env.useCustomCache=true;
+   const policy=whisperLoadingPolicy(data.install===true);lib.env.allowLocalModels=policy.allowLocalModels;lib.env.allowRemoteModels=policy.allowRemoteModels;lib.env.useBrowserCache=false;lib.env.useCustomCache=true;
    lib.env.customCache={match:(request:Request)=>cache.match(request),put:(request:Request,response:Response)=>cache.put(request,response)};
    lib.env.backends.onnx.wasm.numThreads=1;lib.env.backends.onnx.wasm.proxy=false;
    lib.env.backends.onnx.wasm.wasmPaths={mjs:data.mjs,wasm:data.wasm};
-   pipeline=await lib.pipeline('automatic-speech-recognition',model.repo,{revision:model.revision,device:'wasm',dtype:'q8',local_files_only:!data.install,progress_callback:(progress:unknown)=>worker.postMessage({id,progress})});
+   pipeline=await lib.pipeline('automatic-speech-recognition',model.repo,{revision:model.revision,device:'wasm',dtype:'q8',local_files_only:policy.local_files_only,progress_callback:(progress:unknown)=>worker.postMessage({id,progress})});
    worker.postMessage({id,result:true});
   }else if(action==='recognize'){
    if(!pipeline)throw Error('ブラウザーWhisperが準備されていません。');

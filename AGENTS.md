@@ -2,7 +2,7 @@
 
 ## 開発規則
 
-- 現行v0.1.0はユーザー指定のWeb版を主対象とする。正本はsite/、配信はscripts/serve-web.mjs、動画処理はMediabunny/WebCodecs。工程1は既存TranscriptionServerへ接続し、工程2はブラウザー単独でVTT編集・動画カットを行う。旧Rust/Tauri・dialogue/・web/と配布EXEは移行前の構成として保持し、Web修正と混同しない。
+- 現行v0.1.1はユーザー指定のWeb版を主対象とする。正本はsite/、配信はscripts/serve-web.mjs、動画処理はMediabunny/WebCodecs。工程1はTranscriptionServerまたは各ツール専用キャッシュへ明示導入するブラウザーWhisper、工程2はブラウザー単独でVTT編集・動画カットを行う。モデル/FFmpeg/サーバー実行環境はサーバー管理UIで導入し、本ツールに重複実装しない。旧Rust/Tauri・dialogue/・web/と配布EXEは移行前の構成として保持し、Web修正と混同しない。
 - PowerShellはpwshを使用する。質問のみでは変更しない。明確な依頼の範囲で実装し、既存の録音・動画・サーバー設定を保持する。
 - バージョンはvX.Y.Z。現行基準はユーザー指定のv0.1.0。メジャー/マイナーは明示指示がある場合だけ変更し、通常はパッチのみ上げる。アプリ更新/採番時だけapp-version-updateスキルを参照する。採番変更前の旧版との互換性維持は不要。ウィンドウタイトルは「動画編集 - TranscriptCutter - vX.Y.Z」。
 - dev/vX.Y.Z-req.mdはユーザー要求を原則1件1行で記録し、意味・範囲をAIだけで変更しない。チェック追加、軽微修正、回答・確定仕様の追記のみ許可。

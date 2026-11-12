@@ -70,15 +70,8 @@ export function createWebServer({directory=fileURLToPath(new URL('../dist-web/',
  return server;
 }
 async function main(){
- let registry='';try{registry=await readFile('C:/develop/DevServer/local/servers.json','utf8');}catch(error){if(error.code!=='ENOENT')throw error;}
- const requested=process.env.TC_WEB_PORT?Number(process.env.TC_WEB_PORT):0;
- if(requested&&(!Number.isInteger(requested)||requested<1024||requested>65535||new RegExp(`\\b${requested}\\b`).test(registry)))throw Error('指定ポートは予約済み、または不正です。');
- const server=createWebServer({speechUrl:process.env.TC_TRANSCRIPTION_URL||'http://127.0.0.1:8769',speechToken:process.env.TC_TRANSCRIPTION_TOKEN||''});
- server.on('error',error=>{console.error(`Webサーバーを起動できません: ${error.code??'unknown'}`);process.exitCode=1;});
- await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(requested,'127.0.0.1',resolve);});
- const port=server.address().port;if(new RegExp(`\\b${port}\\b`).test(registry)){server.close();throw Error('割当ポートが台帳に予約されています。再実行してください。');}
- server.requestTimeout=0;
- console.log(`TranscriptCutter v0.1.1: http://127.0.0.1:${port}/`);
+ const {startStandalone}=await import('./standalone-web.mjs');
+ const server=await startStandalone({directory:fileURLToPath(new URL('../dist-web/',import.meta.url)),version:'0.1.1',args:['--no-open']});
  const close=()=>server.close(()=>process.exit(0));process.on('SIGTERM',close);process.on('SIGINT',close);
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href)main().catch(error=>{console.error(error.message);process.exitCode=1;});

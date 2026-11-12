@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {whisperSegments,browserWhisperModels,whisperCache,runtimeFiles} from '../browser-whisper-config.ts';
+import {whisperSegments,browserWhisperModels,whisperCache,runtimeFiles,whisperLoadingPolicy} from '../browser-whisper-config.ts';
 import {transcriptionName} from '../recognition-state.ts';
 import {supportedModel} from '../recognition-options.ts';
 test('browser timestamps are absolute, clipped to the requested fractional boundary and invalid cues rejected',()=>{
@@ -12,6 +12,10 @@ test('browser model identifiers pin multilingual revisions and the cache is tool
  assert.equal(browserWhisperModels.length,2);for(const model of browserWhisperModels){assert.match(model.revision,/^[a-f0-9]{40}$/);assert.ok(!model.repo.endsWith('.en'));}
  assert.match(whisperCache,/transcript-cutter/);assert.ok(runtimeFiles.some(name=>name.endsWith('.wasm')));
  assert.match(transcriptionName({id:'a'.repeat(32),engine:'browser-whisper',modelId:'tiny',status:'complete'},'fixture.wav',''),/__browser-this-PC__browser-whisper__tiny__/);
+});
+test('cached inference enables local cache resolution and forbids remote model acquisition',()=>{
+ assert.deepEqual(whisperLoadingPolicy(false),{allowLocalModels:true,allowRemoteModels:false,local_files_only:true});
+ assert.deepEqual(whisperLoadingPolicy(true),{allowLocalModels:false,allowRemoteModels:true,local_files_only:false});
 });
 test('new server contract distinguishes supported online-installable runtimes from unsupported models',()=>{
  const row=values=>({id:'whisper/tiny',x_meeting:{engineId:'whisper',processingMethods:[{id:'cpu'}],...values}});

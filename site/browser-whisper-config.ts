@@ -6,6 +6,7 @@ export const browserWhisperModels=[
  {id:'base',label:'Whisper Base',repo:'onnx-community/whisper-base',revision:'27a07b4b52b3a4c5886134bb4320e93e1a4bbc7c'},
 ] as const;
 export type BrowserWhisperModel=typeof browserWhisperModels[number];
+export const whisperLoadingPolicy=(install:boolean)=>({allowLocalModels:!install,allowRemoteModels:install,local_files_only:!install});
 export function whisperSegments(chunks:{text:string;timestamp:[number|null,number|null]}[],from:number,to:number,nextId:number){
  return chunks.flatMap(chunk=>{
   const a=chunk.timestamp?.[0],b=chunk.timestamp?.[1];

@@ -11,7 +11,7 @@ const folder=resolve(root,'runtime','standalone-acceptance',randomUUID(),'日本
 await mkdir(folder,{recursive:true});
 const name=`TranscriptCutter-web-v${version}.exe`,exe=join(folder,name);
 await copyFile(resolve(root,'release',name),exe);
-const env={...process.env,PATH:join(process.env.SystemRoot,'System32')+';'+process.env.SystemRoot,TC_WEB_PORT:'0',TC_TRANSCRIPTION_TOKEN:''};
+const env={...process.env,PATH:join(process.env.SystemRoot,'System32')+';'+process.env.SystemRoot,TC_WEB_PORT:'0',TC_WEB_STATE_DIR:resolve(folder,'..','state'),TC_TRANSCRIPTION_TOKEN:''};
 assert.equal(execFileSync(exe,['--version'],{cwd:folder,env,encoding:'utf8'}).trim(),`TranscriptCutter Web v${version}`);
 const calls=[],id='a'.repeat(32);
 const upstream=createServer(async(req,res)=>{
