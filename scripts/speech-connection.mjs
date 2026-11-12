@@ -54,5 +54,8 @@ export async function connectSpeech(value,key=''){
   if(typeof health.token!=='string'||!health.token||/[\r\n]/.test(health.token))throw new ConnectionError('一時操作トークンを取得できません。',502,'missing_operation_token');
   mode=health.authMode==='lan'?'lan':'local';headers={'X-Local-Token':health.token};
  }
- return {target,headers,health:{appId:health.appId,protocolVersion:health.protocolVersion,serverVersion:health.serverVersion,executionTarget:health.executionTarget,authMode:mode}};
+ const current=result.body,readiness={};
+ for(const name of ['ready','speechAvailable','ffmpegAvailable','ffprobeAvailable'])if(typeof current[name]==='boolean')readiness[name]=current[name];
+ if(typeof current.reason==='string')readiness.reason=current.reason.slice(0,500);
+ return {target,headers,health:{appId:health.appId,protocolVersion:health.protocolVersion,serverVersion:health.serverVersion,executionTarget:health.executionTarget,authMode:mode,...readiness}};
 }

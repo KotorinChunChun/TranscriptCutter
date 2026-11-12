@@ -1,6 +1,6 @@
 {
   "name": "transcript-cutter",
-  "version": "0.2611.7",
+  "version": "0.2611.8",
   "private": true,
   "type": "module",
   "scripts": {

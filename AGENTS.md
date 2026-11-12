@@ -4,7 +4,7 @@
 
 - v0.2611.2以降はユーザー指定によりWeb版を主対象とする。正本はsite/、配信はscripts/serve-web.mjs、動画処理はMediabunny/WebCodecs。工程1は既存TranscriptionServerへ接続し、工程2はブラウザー単独でVTT編集・動画カットを行う。旧Rust/Tauri・dialogue/・web/と配布EXEは移行前の構成として保持し、Web修正と混同しない。
 - PowerShellはpwshを使用する。質問のみでは変更しない。明確な依頼の範囲で実装し、既存の録音・動画・サーバー設定を保持する。
-- バージョンはvX.Y.Z。新規開始版はv0.2611.0（YYMM形式）。ウィンドウタイトルは「動画編集 - TranscriptCutter - vX.Y.Z」。
+- バージョンはvX.Y.Z。明示指示がなければ通常はパッチのみ上げ、アプリ更新/採番時だけapp-version-updateスキルを参照する。ウィンドウタイトルは「動画編集 - TranscriptCutter - vX.Y.Z」。
 - dev/vX.Y.Z-req.mdはユーザー要求を原則1件1行で記録し、意味・範囲をAIだけで変更しない。チェック追加、軽微修正、回答・確定仕様の追記のみ許可。
 - dev/vX.Y.Z-imp.mdへ実装前の設計・変更対象・検証方法を記録し、計画変更・比較結果・採用理由・実施結果を更新する。
 - 大規模な実装は必要な場合だけdev/vX.Y.Z-task.mdでフェーズ管理し、試験・ビルド・記録が通ってから対象差分をコミットして次へ進む。

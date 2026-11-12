@@ -11,10 +11,14 @@ const fixture=(mode,received,options={})=>createServer(async(req,res)=>{
  received.push({url:req.url,method:req.method,headers:req.headers,body:Buffer.concat(chunks).toString()});
  res.setHeader('Content-Type','application/json');
  if(mode==='bearer'&&req.headers.authorization!=='Bearer fixture-server-key'){res.writeHead(401).end(JSON.stringify({error:'サーバーの接続キーを確認してください。'}));return;}
- if(req.url==='/api/health'){res.end(JSON.stringify({...identity,...(mode==='local'?{}:{authMode:mode,executionTarget:'server'}),...(mode==='bearer'?{}:{token:options.token??'fixture-operation-token'})}));return;}
+ if(req.url==='/api/health'){res.end(JSON.stringify({...identity,...(mode==='local'?{}:{authMode:mode,executionTarget:'server'}),...(mode==='bearer'?{}:{token:options.token??'fixture-operation-token'}),...options.health}));return;}
  res.end(JSON.stringify({job:{id:'a'.repeat(32),status:req.url.endsWith('/cancel')?'cancelled':'queued'},data:[],segments:[],total:0}));
 });
 const clientHeaders=id=>({'X-TC-Client':id});
+test('preparation health is a small allowlist without arbitrary server fields or secrets',async()=>{
+ const upstream=fixture('lan',[],{health:{ready:false,reason:'モデル未準備',ffmpegAvailable:true,speechAvailable:false,privateConfig:'fixture-secret',nested:{token:'private'}}}),target=await listen(upstream),web=createWebServer({speechUrl:target}),base=await listen(web);
+ try{const response=await fetch(base+'/speech/api/health');const value=await response.json();assert.equal(value.ready,false);assert.equal(value.reason,'モデル未準備');assert.equal(value.ffmpegAvailable,true);assert.equal(value.speechAvailable,false);assert.equal(value.token,undefined);assert.equal(value.privateConfig,undefined);assert.equal(value.nested,undefined);assert.ok(!JSON.stringify(value).includes('fixture-secret'));}finally{await stop(web);await stop(upstream);}
+});
 async function configure(base,target,key='',id='fixture-client-id-0001'){
  return fetch(base+'/connection',{method:'POST',headers:{...clientHeaders(id),'Content-Type':'application/json'},body:JSON.stringify({url:target,key})});
 }
