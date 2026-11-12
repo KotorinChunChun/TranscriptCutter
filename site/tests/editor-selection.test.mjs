@@ -199,11 +199,11 @@ test('selection/restoration roundtrips schema 1 projects and VTT/cut exports ref
   assert.deepEqual(parseVtt(serializeVtt(original)).cues.map(c => [c.text, c.start, c.end]), [['beta', 6000, 10000]]);
   assert.deepEqual(parseVtt(serializeVtt(edited)).cues.map(c => [c.text, c.start, c.end]), [['beta', 0, 4000]]);
   const log = JSON.parse(exportCutJson(loaded.doc, loaded.state, { sourceFile: loaded.sourceFile, mediaDurationMs: 20000 }));
-  assert.deepEqual(log.cutRanges.map(c => [c.start, c.end]), [[0, 6000], [10000, 20000]]);
+  assert.deepEqual(log.cutRanges.map(c => [c.start, c.end]), [[0, 6000], [10000, 16000]]);
   assert.ok(log.cutRanges.every(c => c.estimated && c.kinds.includes('selection')));
-  assert.ok(log.cutRanges.at(-1).kinds.includes('tail'));
-  assert.equal(log.truncateAfterMs, 16000);
-  assert.deepEqual(log.keepRanges.map(c => [c.start, c.end]), [[6000, 10000]]);
+  assert.ok(!log.cutRanges.at(-1).kinds.includes('tail'));
+  assert.equal(log.truncateAfterMs, null);
+  assert.deepEqual(log.keepRanges.map(c => [c.start, c.end]), [[6000, 10000], [16000, 20000]]);
   assert.equal(restoreTextSpans(loaded.doc, loaded.state, [span('a', 0, 16)]).cuts.length, 0);
 
   const unicode = buildDocument([cue('unicode', 'A😀B')]);

@@ -194,7 +194,7 @@ test('project flattening restores corrected text, split speakers, precision and 
   assert.ok(loaded.doc.lines.every(line => line.precision === 'estimated'));
   assert.deepEqual(mediaBounds(loaded.state), mediaBounds(state));
   assert.equal(loaded.doc.durationMs, 5000);
-  assert.equal(JSON.parse(exportCutJson(loaded.doc, loaded.state, { sourceFile: 'test.vtt', mediaDurationMs: 9000 })).truncateAfterMs, 5000);
+  assert.equal(JSON.parse(exportCutJson(loaded.doc, loaded.state, { sourceFile: 'test.vtt', mediaDurationMs: 9000 })).truncateAfterMs, null);
   json.cues[0].estimatedTiming = 'pretend';
   assert.throws(() => importProjectJson(JSON.stringify(json)), /精度/);
 });

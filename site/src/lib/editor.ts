@@ -52,7 +52,7 @@ const revisionDocuments = new WeakMap<readonly RevisedCue[], EditorDocument>();
 const sourceVoiceSpans = new WeakMap<RevisedCue, VoiceTextSpan[]>();
 
 export function createEditorState(): EditorState {
-  return { cuts: [], aliases: {}, speakerOverrides: {}, forcedJoins: [] };
+  return { cuts: [], aliases: {}, speakerOverrides: {}, forcedJoins: [], keepTail: true };
 }
 
 /** UTF-16 offsets are stable IDs; timing weights Unicode code points equally. */

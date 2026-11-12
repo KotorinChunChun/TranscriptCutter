@@ -149,8 +149,8 @@ test('media-only cuts preserve all nondeleted words; fully covered cue requires 
   assert.throws(()=>buildEditedCues(doc,all),/全区間/);
 });
 
-test('unknown media length still exports a complete keep policy bounded by the input VTT',()=>{
-  const doc=buildDocument([cue('a','abc',0,10000)]), state=addCut(empty(),{start:1000,end:2000,kind:'gap',precision:'gap'});
+test('explicit tail discard exports a complete keep policy bounded by the input VTT',()=>{
+  const doc=buildDocument([cue('a','abc',0,10000)]), state=addCut({...empty(),keepTail:false},{start:1000,end:2000,kind:'gap',precision:'gap'});
   const unknown=JSON.parse(exportCutJson(doc,state,{sourceFile:'example.vtt'}));
   assert.equal(unknown.mediaDurationMs,null); assert.equal(unknown.keepRangesComplete,true);
   assert.equal(unknown.truncateAfterMs,10000); assert.equal(unknown.trailingMediaPolicy,'discard');
@@ -171,7 +171,7 @@ test('unknown media length still exports a complete keep policy bounded by the i
 
 test('tail cut uses the maximum cue end and is derived without adding undoable edits',()=>{
   const doc=buildDocument([cue('later','後',8000,10007),cue('earlier','前',1000,4000)]);
-  const state=empty(), snapshot=structuredClone(state);
+  const state={...empty(),keepTail:false}, snapshot=structuredClone(state);
   const tail=getTranscriptTailCut(doc,12000);
   assert.equal(doc.durationMs,10007);
   assert.deepEqual([tail.start,tail.end,tail.kind,tail.precision],[10007,12000,'tail','cue']);
@@ -186,7 +186,7 @@ test('tail cut uses the maximum cue end and is derived without adding undoable e
 
 test('tail overlap is removed once and JSON keep intervals match actual video planning',()=>{
   const doc=buildDocument([cue('a','abc',1000,10000)]);
-  let state=addCut(empty(),{id:'inside',start:2000,end:3000,kind:'manual',precision:'manual'});
+  let state=addCut({...empty(),keepTail:false},{id:'inside',start:2000,end:3000,kind:'manual',precision:'manual'});
   state=addCut(state,{id:'overlap',start:9000,end:11000,kind:'manual',precision:'manual'});
   const exported=JSON.parse(exportCutJson(doc,state,{sourceFile:'test.vtt',mediaDurationMs:12000}));
   const plan=buildMediaCutPlan(state.cuts,12000,doc.durationMs);
@@ -203,15 +203,15 @@ test('shorter or equal media is neither padded nor assigned an invented tail int
   for(const duration of [8000,10000]) {
     const out=JSON.parse(exportCutJson(doc,empty(),{sourceFile:'test.vtt',mediaDurationMs:duration}));
     assert.equal(out.durationMs,duration); assert.equal(out.mediaDurationMs,duration);
-    assert.equal(out.truncateAfterMs,10000); assert.equal(out.subtitleExtendsPastMediaEnd,duration<10000);
+    assert.equal(out.truncateAfterMs,null); assert.equal(out.subtitleExtendsPastMediaEnd,duration<10000);
     assert.deepEqual(out.cutRanges,[]); assert.deepEqual(out.automaticCuts,[]);
     assert.deepEqual(out.keepRanges,[{start:0,end:duration,durationMs:duration}]);
   }
 });
 
-test('project policy survives reopen and old projects receive the same derived tail behavior',()=>{
+test('an explicit discard policy survives project reopen',()=>{
   const doc=buildDocument([cue('a','first',0,4000),cue('b','last',5000,10000)]);
-  const state=deleteLines(doc,empty(),[doc.lines[1].id]);
+  const state=deleteLines(doc,{...empty(),keepTail:false},[doc.lines[1].id]);
   const serialized=exportProjectJson(doc,state,{sourceFile:'test.vtt',mediaDurationMs:12000});
   const project=JSON.parse(serialized);
   assert.equal(project.truncateAfterMs,10000); assert.equal(project.trailingMediaPolicy,'discard');

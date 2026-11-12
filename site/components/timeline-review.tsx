@@ -4,8 +4,8 @@ import {visualVerdict,type TimeRange,type ReviewGap} from '../src/lib/timeline-r
 import {generateThumbnails,type Thumbnail} from '../src/lib/video-thumbnails';
 export type Verdict=ReturnType<typeof visualVerdict>;
 export type ReviewTarget=TimeRange & {label:string;kind:'gap'|'speech'};
-export function GapRow({gap,verdict,onOpen,keepTail=false,onToggleTail}:{gap:ReviewGap;verdict?:Verdict;onOpen:()=>void;keepTail?:boolean;onToggleTail?:()=>void}){
- return <div className="review-gap" data-gap-start={gap.start}><span>字幕なし {(gap.end-gap.start)/1000}秒</span><small>{gap.trailing?keepTail?'VTT終了後・末尾保持':'VTT終了後・自動カット':'無音未確認'}</small><button onClick={onOpen}>映像・時間軸</button>{onToggleTail&&<button onClick={onToggleTail}>{keepTail?'末尾の自動カットへ戻す':'末尾を残す'}</button>}{verdict&&<span className={`visual-verdict ${verdict.kind}`}>{verdict.label}</span>}</div>;
+export function GapRow({gap,verdict,onOpen,keepTail=true,onToggleTail}:{gap:ReviewGap;verdict?:Verdict;onOpen:()=>void;keepTail?:boolean;onToggleTail?:()=>void}){
+ return <div className="review-gap" data-gap-start={gap.start}><span>字幕なし {(gap.end-gap.start)/1000}秒</span><small>{gap.trailing?keepTail?'VTT終了後・末尾保持':'VTT終了後・自動カット':'無音未確認'}</small><button onClick={onOpen}>映像・時間軸</button>{onToggleTail&&<button onClick={onToggleTail}>{keepTail?'末尾もカット':'末尾を残す'}</button>}{verdict&&<span className={`visual-verdict ${verdict.kind}`}>{verdict.label}</span>}</div>;
 }
 export function TimelineReview({target,file,selection,cuts,currentMs,onSelect,onDelete,onSeek,onClose,onVerdict,disabled=false}:{target:ReviewTarget;file:File|null;selection:readonly TimeRange[];cuts:readonly TimeRange[];currentMs:number;onSelect:(range:TimeRange)=>void;onDelete:()=>void;onSeek:(ms:number)=>void;onClose:()=>void;onVerdict:(v:Verdict)=>void;disabled?:boolean}){
  const [frames,setFrames]=useState<Thumbnail[]>([]),[busy,setBusy]=useState(false),[progress,setProgress]=useState(''),[error,setError]=useState(''),[verdict,setVerdict]=useState<Verdict|null>(null);

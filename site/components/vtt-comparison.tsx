@@ -296,7 +296,7 @@ export function VttComparison({ session, onChange, onAddFiles, onApply, onExport
     <div className="comparison-empty-preview" aria-hidden="true">
       {["モデル A", "モデル B", "モデル C"].map((name, index) => <div key={name} className={`comparison-preview-card model-${index}`}><span>{name}</span><i/><i/><i/><b><Check size={10}/>{index === 1 ? "話者" : "字幕"}</b></div>)}
     </div>
-    <div className="comparison-empty-actions"><button type="button" className="button primary" disabled={busy} onClick={onAddFiles}><FolderOpen size={15}/>VTTファイルを選択</button></div>
+    <div className="comparison-empty-actions"><button type="button" className="button primary" disabled={busy} onClick={onAddFiles}><FolderOpen size={15}/>VTTを貼り付け</button></div>
     <span className="comparison-empty-footnote">.vtt · 最大3ファイル · 元動画の時刻を使用</span>
   </section>;
 
