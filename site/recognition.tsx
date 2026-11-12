@@ -54,28 +54,28 @@ export function Recognition({active,onTransfer,onActivity}:{active:boolean;onTra
  <header className="recognition-heading"><h1>文字起こし</h1><span role="status">{connecting?'接続中':busy?'処理中':job?.status==='complete'?'認識完了':workflow.canStart?'開始できます':'準備'}</span></header>
  {error&&<p role="alert" className="error">{error}</p>}
  <div className="panes"><section className="setup-column" aria-label="文字起こしの準備">
- <SetupCard number={1} title="サーバー接続" summary={connectionCurrent?connectedUrl:connected?'変更未反映':'未接続'} active={currentStep===1} disabled={connecting} onOpen={()=>openStep(1)}>
+ <SetupCard number={1} title="サーバー接続" summary={connecting?'確認中':connectionCurrent?connectedUrl:connected?'変更未反映':'未接続'} active={currentStep===1} disabled={connecting} onOpen={()=>openStep(1)}>
   <div className="connection-settings"><label>接続先 <input type="url" aria-label="文字起こしサーバーURL" value={serverUrl} disabled={busy||connecting} onChange={e=>{setServerUrl(e.target.value);setServerKey('');setKeyRequired(false);setAuthMode(null);}}/></label>
-  <span role="status" aria-label="接続方式">{connectionCurrent?authMode==='lan'?'LAN（キー不要）':authMode==='bearer'?'Bearer':'このPC（キー不要）':message}</span>
+  <span role="status" aria-label="接続方式">{connecting?'接続中':connectionCurrent?authMode==='lan'?'LAN（キー不要）':authMode==='bearer'?'Bearer':'このPC（キー不要）':connected?'変更未反映':message}</span>
   {keyRequired&&<label>接続キー（Bearer認証のみ） <input type="password" aria-label="サーバー接続キー" autoComplete="off" value={serverKey} disabled={upload||connecting} onChange={e=>setServerKey(e.target.value)}/></label>}
   <button className="primary-action" disabled={upload||connecting||!canConfigureConnection(busy,connectedUrl,serverUrl)} onClick={()=>void applyConnection()}>接続を確認</button></div>
-  {connectionCurrent&&!busy&&<button className="next-step" onClick={()=>openStep(2)}>次へ：モデルと処理方式</button>}
+  {connectionCurrent&&!busy&&<button className="next-step primary-action" onClick={()=>openStep(2)}>次へ：モデルと処理方式</button>}
  </SetupCard>
  <SetupCard number={2} title="モデルと処理方式" summary={!connectionCurrent?'接続待ち':serverReady===false||!models.length?'準備が必要':model?`${model.x_meeting.label}・${model.x_meeting.processingMethods.find(m=>m.id===device)?.label??'処理方式を選択'}`:'モデルを選択'} active={currentStep===2} disabled={busy||connecting||!workflow.allowed[2]} onOpen={()=>openStep(2)}>
   <div className="preparation-status" role="status">{serverReady===false||!models.length?serverReason||'利用可能なモデルがありません':`利用できるモデル ${models.length}件`}</div>
-  <div className="row server-actions">{manageLink&&<a className="setup-link" href={manageLink} target="_blank" rel="noopener noreferrer">サーバー管理を開く ↗</a>}<button disabled={busy||connecting} onClick={()=>void connect()}>準備状況を更新</button></div>
+  <div className="row server-actions">{manageLink&&<a className={`setup-link ${serverReady===false||!models.length?'primary-action':''}`} href={manageLink} target="_blank" rel="noopener noreferrer">サーバー管理を開く ↗</a>}<button disabled={busy||connecting} onClick={()=>void connect()}>準備状況を更新</button></div>
   <div className="model-fields"><label>文字起こしモデル <select aria-label="認識モデル" value={modelId} disabled={!models.length||busy} onChange={e=>chooseModel(e.target.value)}>{!models.length&&<option value="">未準備</option>}{models.map(m=><option key={m.id} value={m.id}>{m.x_meeting.engineLabel} / {m.x_meeting.label}</option>)}</select></label>
   <label>処理方式 <select aria-label="処理方式" disabled={busy||!model} value={device} onChange={e=>setDevice(e.target.value)}>{(model?.x_meeting.processingMethods??[]).map(m=><option key={m.id} value={m.id}>{m.label}</option>)}</select></label>
   <label className="speaker-choice"><input type="checkbox" checked={diarize} disabled={busy||!model?.x_meeting.diarization} onChange={e=>setDiarize(e.target.checked)}/>話者識別</label></div>
-  <button className="next-step" disabled={!workflow.allowed[3]||busy} onClick={()=>openStep(3)}>次へ：動画・音声</button>
+  <button className="next-step primary-action" disabled={!workflow.allowed[3]||busy} onClick={()=>openStep(3)}>次へ：動画・音声</button>
  </SetupCard>
  <SetupCard number={3} title="動画・音声" summary={file?.name??'未選択'} active={currentStep===3} disabled={busy||connecting||!workflow.allowed[3]&&!job} onOpen={()=>openStep(3)}>
-  <div className="file-drop-zone" aria-label="工程1の動画ドロップ領域" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();if(e.dataTransfer.files.length===1)load(e.dataTransfer.files[0]);}}><button disabled={busy} onClick={async()=>{const files=await chooseFiles('media');if(files[0])load(files[0]);}}>動画・音声を読み込む</button><p>{file?.name??'動画・音声をドロップ'}</p></div>
-  {file&&<button className="next-step" onClick={()=>openStep(4)}>次へ：文字起こし</button>}
+  <div className="file-drop-zone" aria-label="工程1の動画ドロップ領域" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();if(e.dataTransfer.files.length===1)load(e.dataTransfer.files[0]);}}><button className={!file?'primary-action':''} disabled={busy} onClick={async()=>{const files=await chooseFiles('media');if(files[0])load(files[0]);}}>動画・音声を読み込む</button><p>{file?.name??'動画・音声をドロップ'}</p></div>
+  {file&&<button className="next-step primary-action" onClick={()=>openStep(4)}>次へ：文字起こし</button>}
  </SetupCard>
  <SetupCard number={4} title="文字起こし" summary={busy?'処理中':job?status[job.status]??job.status:workflow.canStart?'開始できます':'準備待ち'} active={currentStep===4} disabled={connecting||!workflow.allowed[4]&&!job} onOpen={()=>openStep(4)}>
-  <p className="ready-summary">{file?.name??'元動画・音声が未選択'}</p>
-  <details className="recognition-options"><summary>認識範囲：{start==='0'&&!end?'全体':`${start}秒〜${end?end+'秒':'末尾'}`}</summary><div className="row"><label>開始（秒） <input aria-label="認識開始秒" type="number" min="0" value={start} disabled={busy} onChange={e=>setStart(e.target.value)}/></label><label>終了（秒） <input aria-label="認識終了秒" type="number" min="0" value={end} disabled={busy} placeholder="動画末尾" onChange={e=>setEnd(e.target.value)}/></label></div></details>
+  <p className="ready-summary">{file?.name??job?.fileName??'元動画・音声が未選択'}</p>
+  {!busy&&<details className="recognition-options"><summary>{job?'次の認識範囲':'認識範囲'}：{start==='0'&&!end?'全体':`${start}秒〜${end?end+'秒':'末尾'}`}</summary><div className="row"><label>開始（秒） <input aria-label="認識開始秒" type="number" min="0" value={start} disabled={busy} onChange={e=>setStart(e.target.value)}/></label><label>終了（秒） <input aria-label="認識終了秒" type="number" min="0" value={end} disabled={busy} placeholder="動画末尾" onChange={e=>setEnd(e.target.value)}/></label></div></details>}
   <button className="primary-action start-recognition" disabled={!workflow.canStart||connecting} onClick={()=>void recognize()}>文字起こし開始</button>
  </SetupCard>
  {url&&<video ref={player} controls src={url} preload="metadata" onError={()=>setError('この形式はブラウザーでプレビューできません。')}/>}
