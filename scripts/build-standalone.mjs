@@ -30,7 +30,7 @@ process.title='TranscriptCutter Web v${version}';
  if(!server)return;
  let closing=false;const close=async()=>{if(closing)return;closing=true;server.closeAllConnections();await new Promise(resolve=>server.close(resolve));await server.cleanup?.();process.exit(0);};
  process.on('SIGINT',close);process.on('SIGTERM',close);process.on('SIGBREAK',close);
-}).catch(error=>{console.error('起動できません: '+(error.code||error.message));process.exitCode=1;});`;
+}).catch(error=>{console.error('起動できません: '+(error.code||error.message));process.exit(1);});`;
 const main=resolve(work,'main.cjs');
 await build({stdin:{contents:entry,resolveDir:root,sourcefile:'standalone-entry.mjs'},bundle:true,platform:'node',target:'node22',format:'cjs',outfile:main,define:{'import.meta.url':JSON.stringify('file:///transcript-cutter-bundle.mjs')}});
 const config=resolve(work,'sea-config.json'),blob=resolve(work,'sea-prep.blob');

@@ -111,12 +111,13 @@ export async function runServerSupervisor({spawnProcess=spawn}={}){
 }
 
 export async function startSupervisedServer({directory,stateDir,registry,preferred=0,supervisorArgs=['--tc-server-supervisor']}){
+ const reservedPorts=[...new Set(String(registry).match(/\b\d{4,5}\b/g)??[])].filter(p=>Number(p)<=65535).join(',');
  const child=spawn(process.execPath,supervisorArgs,{windowsHide:true,stdio:['pipe','pipe','pipe']});
  let ended=false,exitError;child.once('exit',()=>{ended=true;});child.once('error',error=>{exitError=error;});child.stderr.on('data',()=>{});child.stdin.on('error',()=>{});
  const stop=async()=>{if(ended)return;await new Promise(r=>{const timer=setTimeout(()=>{child.kill();r();},5000);child.once('exit',()=>{clearTimeout(timer);r();});child.stdin.end();});};
  try{
   const ready=await new Promise((r,j)=>{let buffer='';const timer=setTimeout(()=>j(Error('専用サーバーの起動確認がタイムアウトしました。')),25000);const fail=()=>{clearTimeout(timer);j(Error('専用サーバーを起動できません。'));};child.once('error',fail);child.once('exit',fail);child.stdout.on('data',chunk=>{buffer+=chunk;if(buffer.length>32768){fail();return;}if(buffer.includes('\n')){try{const data=JSON.parse(buffer.trim());if(data.ready!==true||!Number.isInteger(data.port)||data.port<1024||data.port>65535||data.port===8769)throw Error();clearTimeout(timer);r(data);}catch{fail();}}});
-   child.stdin.write(JSON.stringify({directory,stateDir,registry,preferred})+'\n');
+   child.stdin.write(JSON.stringify({directory,stateDir,registry:reservedPorts,preferred})+'\n');
   });
   return {url:`http://127.0.0.1:${ready.port}/`,port:ready.port,child,stop};
  }catch(error){await stop();throw exitError||error;}

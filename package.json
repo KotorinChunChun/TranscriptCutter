@@ -8,6 +8,7 @@
     "build:exe": "node scripts/build-standalone.mjs",
     "check:exe": "node scripts/check-standalone.mjs",
     "build:installers": "node scripts/build-installers.mjs",
+    "check:installers": "node scripts/check-installers.mjs",
     "test": "node --test tests/*.test.mjs",
     "build": "npm run build:web",
     "dev": "npm run build:web && node scripts/serve-web.mjs",
