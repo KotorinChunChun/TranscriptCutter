@@ -17,6 +17,7 @@ test('unsupported and un-installable models are hidden; installable uncached mod
 });
 test('speaker preference survives models without diarization and is applied only when supported',()=>{
  const preference=true;assert.equal(effectiveDiarization(preference,model({diarization:true})),true);assert.equal(effectiveDiarization(preference,model({diarization:false})),false);assert.equal(effectiveDiarization(preference,model({diarization:true})),true);
+ assert.equal(effectiveDiarization(preference,model({diarization:false,integratedDiarization:true})),true);assert.equal(effectiveDiarization(false,model({integratedDiarization:true})),false);
 });
 test('finish estimate uses processed range and running time, excludes waiting/diarization/completed work',()=>{
  const now=Date.parse('2026-11-12T00:00:20Z'),job={status:'running',phase:'transcribing',rangeStart:60,rangeEnd:100,processedUntil:80,metadata:{startedAt:'2026-11-12T00:00:00Z'}};

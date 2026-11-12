@@ -19,7 +19,7 @@ export function supportedModel(m:Model){
  if(x.supported===true&&x.runtimeInstallable===true)return true;
  return !(x.installable===false&&!['installed','ready'].includes(x.availability??''))&&![x.availability,x.managementState,x.runtimeStatus].some(value=>['unavailable','unsupported','missing_runtime','runtime_error','unconfigured','not_supported'].includes(String(value)));
 }
-export function effectiveDiarization(preference:boolean,model:Model|undefined){return preference&&model?.x_meeting.diarization===true;}
+export function effectiveDiarization(preference:boolean,model:Model|undefined){return preference&&(model?.x_meeting.diarization===true||model?.x_meeting.integratedDiarization===true);}
 export function finishEstimate(job:Job|null,now:number):{remainingSeconds:number;finishAt:number}|null{
  if(!job||job.status!=='running'||!['transcribing','recognizing'].includes(String(job.phase)))return null;
  const start=Date.parse(String(job.metadata?.startedAt??'')),from=Number(job.rangeStart??0),to=Number(job.rangeEnd??job.duration),done=Number(job.processedUntil),elapsed=(now-start)/1000;
