@@ -1,11 +1,13 @@
 import {useEffect,useRef,useState,type ReactNode} from 'react';
-import {chooseFiles,fileKey} from './browser';
+import {fileKey} from './browser';
 import {SpeechClient,needsBearerKey,canConfigureConnection,type Job,type Model,type Segment} from './speech-client';
 import {segmentsToVtt} from './segments-vtt';
 import {formatTime} from './src/lib/vtt';
 import {RecognitionResults,isActiveJob,recognitionProgress,recognitionElapsed,transcriptionName} from './recognition-state';
 import {recognitionSetup,managementUrl,type SetupStep} from './recognition-setup';
-import {recognitionRange,effectiveDiarization,finishEstimate,type BoundaryMode} from './recognition-options';
+import {effectiveDiarization,finishEstimate} from './recognition-options';
+import {useRecognitionRange,RecognitionRangeControls} from './recognition-range-controls';
+import {MediaDrop} from './media-drop';
 import {beginMetric,processingMetrics} from './processing-metrics';
 import {BrowserRecognition} from './browser-recognition';
 import {ServerMeasurements} from './server-measurements';
@@ -17,7 +19,7 @@ export function Recognition(props:RecognitionProps){
  return <><div className="recognition-source"><label>文字起こしの実行先 <select aria-label="文字起こしの実行先" disabled={busy} value={source} onChange={e=>setSource(e.target.value)}><option value="server">TranscriptionServer</option><option value="browser">このブラウザー（Whisper）</option></select></label></div><div hidden={source!=='server'}><ServerRecognition {...props} active={props.active&&source==='server'} onActivity={setServerActivity}/></div><div hidden={source!=='browser'}><BrowserRecognition {...props} active={props.active&&source==='browser'} onActivity={setBrowserActivity}/></div></>;
 }
 function SetupCard({number,title,summary,active,disabled,onOpen,children}:{number:SetupStep;title:string;summary:string;active:boolean;disabled:boolean;onOpen:()=>void;children:ReactNode}){
- return <section className="setup-card" data-current={active}><button className="setup-toggle" aria-expanded={active} aria-controls={`setup-${number}`} disabled={disabled} onClick={onOpen}><span className="setup-number">{number}</span><span className="setup-label"><strong>{title}</strong><span>{summary}</span></span><span aria-hidden="true">{active?'−':'＋'}</span></button><div className="setup-content" id={`setup-${number}`} hidden={!active}>{children}</div></section>;
+ return <section className="setup-card" data-current={active}><button className="setup-toggle" aria-expanded={active} aria-controls={`setup-${number}`} disabled={disabled} onClick={onOpen}><span className="setup-number">{number}</span><span className="setup-label"><strong>{title}</strong>{summary&&<span>{summary}</span>}</span><span aria-hidden="true">{active?'−':'＋'}</span></button><div className="setup-content" id={`setup-${number}`} hidden={!active}>{children}</div></section>;
 }
 const status:Record<string,string>={uploading:'送信中',queued:'待機中',running:'認識中',complete:'完了',error:'エラー',cancelled:'中止',interrupted:'中断'};
 const phases:Record<string,string>={uploading:'送信中',queued:'待機中',preparing:'音声・モデルを準備中',converting:'音声を変換中',loading:'モデルを準備中',loading_model:'モデルを準備中',downloading:'モデルを取得中',diarizing:'話者を識別中',transcribing:'字幕を認識中',complete:'完了',error:'エラー',cancelled:'中止',interrupted:'中断'};
@@ -25,8 +27,8 @@ function ServerRecognition({active,onTransfer,onActivity}:RecognitionProps){
  const client=useRef(new SpeechClient()).current,reader=useRef(new RecognitionResults(client)).current;
  const resultList=useRef<HTMLDivElement>(null),player=useRef<HTMLVideoElement>(null),pendingCancel=useRef(false),owned=useRef(new Set<string>()),jobFile=useRef(''),uploadStarted=useRef(0);
  const [file,setFile]=useState<File|null>(null),[url,setUrl]=useState(''),[models,setModels]=useState<Model[]>([]),[modelId,setModelId]=useState(''),[device,setDevice]=useState('auto'),[diarize,setDiarize]=useState(false),[connected,setConnected]=useState(false),[message,setMessage]=useState('接続中'),[error,setError]=useState('');
- const [startMode,setStartMode]=useState<BoundaryMode>('edge'),[endMode,setEndMode]=useState<BoundaryMode>('edge');
- const [job,setJob]=useState<Job|null>(null),[segments,setSegments]=useState<Segment[]>([]),[upload,setUpload]=useState(false),[progress,setProgress]=useState(0),[jobs,setJobs]=useState<Job[]>([]),[search,setSearch]=useState(''),[start,setStart]=useState('00:00:00.000'),[end,setEnd]=useState('00:00:00.000');
+ const range=useRecognitionRange(file);
+ const [job,setJob]=useState<Job|null>(null),[segments,setSegments]=useState<Segment[]>([]),[upload,setUpload]=useState(false),[progress,setProgress]=useState(0),[jobs,setJobs]=useState<Job[]>([]),[search,setSearch]=useState('');
  const [serverUrl,setServerUrl]=useState('http://127.0.0.1:8769/'),[connectedUrl,setConnectedUrl]=useState('http://127.0.0.1:8769/'),[serverKey,setServerKey]=useState(''),[showConnection,setShowConnection]=useState(false),[connecting,setConnecting]=useState(false);
  const [authMode,setAuthMode]=useState<string|null>(null),[keyRequired,setKeyRequired]=useState(false);
  const [setupStep,setSetupStep]=useState<SetupStep>(1),[serverReady,setServerReady]=useState<boolean|undefined>(),[serverReason,setServerReason]=useState('');
@@ -50,7 +52,7 @@ function ServerRecognition({active,onTransfer,onActivity}:RecognitionProps){
  const load=(f:File)=>{if(busy)return;if(!/\.(mp4|mov|mkv|webm|avi|m4v|wmv|mts|m2ts|wav|mp3|m4a|ogg|flac|aac)$/i.test(f.name)){setError('動画・音声を選択してください。');return;}setFile(f);setUrl(URL.createObjectURL(f));setSetupStep(4);setError('');if(jobFile.current&&jobFile.current!==fileKey(f)||job?.fileName&&job.fileName!==f.name)clearJob();};
  const refresh=async(reset=false)=>{try{const result=await reader.refresh(reset);if(!result)return;setJob(result.job);setSegments(result.segments);setUpdatedAt(result.updatedAt);setPollError('');}catch(e){if(needsBearerKey(e))connectionError(e);setPollError(`更新できませんでした。取得済み字幕は保持しています。${String(e)}`);}};
  useEffect(()=>{if(!isActiveJob(job))return;const timer=setInterval(()=>void refresh(),1500);return()=>clearInterval(timer);},[job?.id,job?.status]);
- const recognize=async()=>{if(!file||!model||!workflow.canStart||connecting)return;setError('');let range;try{range=recognitionRange(startMode,start,endMode,end);}catch(e){setError(String(e));return;}const {from,to}=range;setSetupStep(4);clearJob();setUpload(true);setProgress(0);setFollow(true);pendingCancel.current=false;uploadStarted.current=Date.now();setMessage('送信中');const finish=beginMetric('upload',{fileName:file.name,engine:model.x_meeting.engineId,modelId:model.x_meeting.modelId});try{const value=await client.upload(file,model,device,effectiveDiarization(diarize,model),from,to,setProgress);finish('complete',{jobId:value.job.id});jobFile.current=fileKey(file);owned.current.add(value.job.id);reader.select(value.job.id);setJob(value.job);setMessage('認識を受け付けました。');if(pendingCancel.current){const stopped=await client.request(`/api/jobs/${value.job.id}/cancel`,{});setJob(stopped.job);}await refresh();await history();}catch(e){finish('error');setError(String(e));}finally{setUpload(false);}};
+ const recognize=async()=>{if(!file||!model||!workflow.canStart||connecting)return;setError('');let bounds;try{bounds=range.request();}catch(e){setError(String(e));return;}const {from,to}=bounds;setSetupStep(4);clearJob();setUpload(true);setProgress(0);setFollow(true);pendingCancel.current=false;uploadStarted.current=Date.now();setMessage('送信中');const finish=beginMetric('upload',{fileName:file.name,engine:model.x_meeting.engineId,modelId:model.x_meeting.modelId});try{const value=await client.upload(file,model,device,effectiveDiarization(diarize,model),from,to,setProgress);finish('complete',{jobId:value.job.id});jobFile.current=fileKey(file);owned.current.add(value.job.id);reader.select(value.job.id);setJob(value.job);setMessage('認識を受け付けました。');if(pendingCancel.current){const stopped=await client.request(`/api/jobs/${value.job.id}/cancel`,{});setJob(stopped.job);}await refresh();await history();}catch(e){finish('error');setError(String(e));}finally{setUpload(false);}};
  const cancel=async()=>{try{if(upload){pendingCancel.current=true;setMessage('送信受付後に中止します。');return;}if(job&&(owned.current.has(job.id)||job.clientId==='transcript-cutter')){await client.request(`/api/jobs/${job.id}/cancel`,{});await refresh();}}catch(e){setError(String(e));}};
  const exportVtt=()=>segmentsToVtt(segments);
  const outputName=(extension='vtt')=>transcriptionName(job!,String(job?.fileName??file?.name??'transcript'),connectedUrl,extension);
@@ -64,7 +66,7 @@ function ServerRecognition({active,onTransfer,onActivity}:RecognitionProps){
  const sourceMatches=!!file&&(!job?.fileName||job.fileName===file.name)&&(!jobFile.current||jobFile.current===fileKey(file));
  const canCancel=upload||isActiveJob(job)&&!!job&&(owned.current.has(job.id)||job.clientId==='transcript-cutter');
  return <section className={`recognition guided-recognition ${hasResult?'has-result':''}`}>
- <header className="recognition-heading"><h1>文字起こし</h1><span role="status">{connecting?'接続中':busy?'処理中':job?.status==='complete'?'認識完了':workflow.canStart?'開始できます':'準備'}</span></header>
+ <header className="recognition-heading"><h1>文字起こし</h1><span role="status">{connecting?'接続中':busy?'処理中':job?.status==='complete'?'認識完了':''}</span></header>
  {error&&<p role="alert" className="error">{error}</p>}
  <div className="panes"><section className="setup-column" aria-label="文字起こしの準備">
  <SetupCard number={1} title="サーバー接続" summary={connecting?'確認中':connectionCurrent?connectedUrl:connected?'変更未反映':'未接続'} active={currentStep===1} disabled={connecting} onOpen={()=>openStep(1)}>
@@ -84,13 +86,13 @@ function ServerRecognition({active,onTransfer,onActivity}:RecognitionProps){
   <button className="next-step primary-action" disabled={!workflow.allowed[3]||busy} onClick={()=>openStep(3)}>次へ：動画・音声</button>
  </SetupCard>
  <SetupCard number={3} title="動画・音声" summary={file?.name??'未選択'} active={currentStep===3} disabled={busy||connecting||!workflow.allowed[3]&&!job} onOpen={()=>openStep(3)}>
-  <div className="file-drop-zone" aria-label="工程1の動画ドロップ領域" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();if(e.dataTransfer.files.length===1)load(e.dataTransfer.files[0]);}}><button className={!file?'primary-action':''} disabled={busy} onClick={async()=>{const files=await chooseFiles('media');if(files[0])load(files[0]);}}>動画・音声を読み込む</button><p>{file?.name??'動画・音声をドロップ'}</p></div>
+  <MediaDrop disabled={busy} onLoad={load} label="工程1の動画ドロップ領域"/>
   {file&&<button className="next-step primary-action" onClick={()=>openStep(4)}>次へ：文字起こし</button>}
  </SetupCard>
- <SetupCard number={4} title="文字起こし" summary={busy?'処理中':job?status[job.status]??job.status:workflow.canStart?'開始できます':'準備待ち'} active={currentStep===4} disabled={connecting||!workflow.allowed[4]&&!job} onOpen={()=>openStep(4)}>
-  <p className="ready-summary">{file?.name??job?.fileName??'元動画・音声が未選択'}</p>
-  {!busy&&<details className="recognition-options"><summary>{job?'次の認識範囲':'認識範囲'}：{startMode==='edge'?'先頭':start} → {endMode==='edge'?'末尾':end}</summary><div className="row"><label>開始 <select aria-label="認識開始位置" value={startMode} onChange={e=>setStartMode(e.target.value as BoundaryMode)}><option value="edge">先頭</option><option value="custom">カスタム</option></select></label><input aria-label="認識開始時刻" type="text" placeholder="hh:mm:ss.sss" value={start} disabled={startMode==='edge'} onChange={e=>setStart(e.target.value)}/><label>終了 <select aria-label="認識終了位置" value={endMode} onChange={e=>setEndMode(e.target.value as BoundaryMode)}><option value="edge">末尾</option><option value="custom">カスタム</option></select></label><input aria-label="認識終了時刻" type="text" placeholder="hh:mm:ss.sss" value={end} disabled={endMode==='edge'} onChange={e=>setEnd(e.target.value)}/></div></details>}
-  <button className="primary-action start-recognition" disabled={!workflow.canStart||connecting} onClick={()=>void recognize()}>文字起こし開始</button>
+ <SetupCard number={4} title="文字起こし" summary={busy?'処理中':job?status[job.status]??job.status:''} active={currentStep===4} disabled={connecting||!workflow.allowed[4]&&!job} onOpen={()=>openStep(4)}>
+
+  <RecognitionRangeControls range={range} disabled={busy||!file}/>
+  <button className="primary-action start-recognition" disabled={!workflow.canStart||connecting||!range.valid} onClick={()=>void recognize()}>文字起こし開始</button>
  </SetupCard>
  {url&&<video ref={player} controls src={url} preload="metadata" onError={()=>setError('この形式はブラウザーでプレビューできません。')}/>}
  <details className="recognition-history"><summary>履歴から再開</summary><div className="row"><button disabled={!connected||busy} onClick={()=>void history()}>履歴を更新</button><select aria-label="認識履歴" value={job?.id??''} disabled={busy} onChange={async e=>{if(busy)return;const selected=jobs.find(j=>j.id===e.target.value);if(!selected)return;reader.select(selected.id);setSegments([]);setUpdatedAt(0);setPage(0);setJob(selected);openStep(4);jobFile.current='';await refresh();}}><option value="">認識履歴</option>{job&&!jobs.some(j=>j.id===job.id)&&<option value={job.id}>{job.fileName} / {status[job.status]??job.status}</option>}{jobs.map(j=><option key={j.id} value={j.id}>{j.fileName} / {String(j.engine??'')} / {String(j.modelId??'')} / {j.id===job?.id?status[job.status]??job.status:status[j.status]??j.status}</option>)}</select></div></details>

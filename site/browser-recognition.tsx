@@ -1,8 +1,10 @@
 import {useEffect,useRef,useState} from 'react';
-import {chooseFiles,fileKey} from './browser';
+import {fileKey} from './browser';
 import {BrowserWhisper,browserWhisperModels,browserWhisperInstalled,openWhisperAudio,whisperAudioChunk} from './browser-whisper';
 import {whisperSegments} from './browser-whisper-config';
-import {recognitionRange,finishEstimate,type BoundaryMode} from './recognition-options';
+import {finishEstimate} from './recognition-options';
+import {useRecognitionRange,RecognitionRangeControls} from './recognition-range-controls';
+import {MediaDrop} from './media-drop';
 import {beginMetric,measure,processingMetrics} from './processing-metrics';
 import {recognitionProgress,transcriptionName} from './recognition-state';
 import {segmentsToVtt} from './segments-vtt';
@@ -12,7 +14,7 @@ export function BrowserRecognition({active,onTransfer,onActivity}:RecognitionPro
  const engine=useRef(new BrowserWhisper()).current,controller=useRef<AbortController|null>(null),player=useRef<HTMLVideoElement>(null),sourceKey=useRef('');
  const [modelId,setModelId]=useState('tiny'),[installed,setInstalled]=useState<Record<string,boolean>>({}),[working,setWorking]=useState(false),[installing,setInstalling]=useState(false),[message,setMessage]=useState(''),[error,setError]=useState('');
  const [file,setFile]=useState<File|null>(null),[url,setUrl]=useState(''),[job,setJob]=useState<Job|null>(null),[segments,setSegments]=useState<Segment[]>([]),[now,setNow]=useState(Date.now());
- const [startMode,setStartMode]=useState<BoundaryMode>('edge'),[endMode,setEndMode]=useState<BoundaryMode>('edge'),[start,setStart]=useState('00:00:00.000'),[end,setEnd]=useState('00:00:00.000');
+ const range=useRecognitionRange(file);
  const model=browserWhisperModels.find(m=>m.id===modelId)!,position=recognitionProgress(job),estimate=finishEstimate(job,now);
  const supported=typeof Worker!=='undefined'&&typeof WebAssembly!=='undefined'&&typeof OfflineAudioContext!=='undefined'&&!!globalThis.caches;
  const check=async()=>{const states=await Promise.all(browserWhisperModels.map(async m=>[m.id,await browserWhisperInstalled(m)] as const));setInstalled(Object.fromEntries(states));};
@@ -30,16 +32,16 @@ export function BrowserRecognition({active,onTransfer,onActivity}:RecognitionPro
  };
  const load=(selected:File)=>{if(working)return;if(!/\.(mp4|mov|mkv|webm|avi|m4v|wmv|mts|m2ts|wav|mp3|m4a|ogg|flac|aac)$/i.test(selected.name)){setError('動画・音声を選択してください。');return;}setFile(selected);setUrl(URL.createObjectURL(selected));setError('');if(sourceKey.current!==fileKey(selected)){setJob(null);setSegments([]);}};
  const recognize=async()=>{
-  if(!file||working||!installed[model.id])return;let range;try{range=recognitionRange(startMode,start,endMode,end);}catch(error){setError(String(error));return;}
+  if(!file||working||!installed[model.id])return;let bounds;try{bounds=range.request();}catch(error){setError(String(error));return;}
   const abort=new AbortController();controller.current=abort;setWorking(true);setError('');setMessage('音声を準備中');setSegments([]);sourceKey.current=fileKey(file);
-  let current:Job={id:crypto.randomUUID().replaceAll('-',''),status:'running',phase:'preparing',engine:'browser-whisper',modelId:model.id,fileName:file.name,rangeStart:range.from,segmentCount:0,metadata:{executionTarget:'browser',executionDevice:'wasm',modelRevision:model.revision,startedAt:new Date().toISOString()}},input:Awaited<ReturnType<typeof openWhisperAudio>>|undefined;
+  let current:Job={id:crypto.randomUUID().replaceAll('-',''),status:'running',phase:'preparing',engine:'browser-whisper',modelId:model.id,fileName:file.name,rangeStart:bounds.from,segmentCount:0,metadata:{executionTarget:'browser',executionDevice:'wasm',modelRevision:model.revision,startedAt:new Date().toISOString()}},input:Awaited<ReturnType<typeof openWhisperAudio>>|undefined;
   const publish=(patch:Partial<Job>)=>{current={...current,...patch};setJob(current);};publish({});const rows:Segment[]=[],details={jobId:current.id,fileName:file.name,engine:'browser-whisper',modelId:model.id},started=performance.now();
   try{
    input=await measure('browser-media-inspection',details,()=>openWhisperAudio(file));
-   const to=range.to??input.duration;if(range.from>=to||to>input.duration+0.000001)throw Error('認識範囲が音声の長さを超えています。');
-   publish({duration:input.duration,rangeEnd:to,processedUntil:range.from});
+   const to=bounds.to??input.duration;if(bounds.from>=to||to>input.duration+0.000001)throw Error('認識範囲が音声の長さを超えています。');
+   publish({duration:input.duration,rangeEnd:to,processedUntil:bounds.from});
    await measure('browser-whisper-loading',details,()=>engine.prepare(model,false,abort.signal,progress));
-   for(let from=range.from;from<to;from+=30){
+   for(let from=bounds.from;from<to;from+=30){
     if(abort.signal.aborted)throw new DOMException('中止','AbortError');const until=Math.min(from+30,to);publish({phase:'converting'});setMessage('音声を読み取り中');
     const audio=await whisperAudioChunk(input.sink,from,until,abort.signal,details);publish({phase:'transcribing'});setMessage('ブラウザー内で認識中');
     const result=await measure('browser-whisper-transcribing',{...details,from,to:until},()=>engine.recognize(audio,abort.signal));
@@ -54,8 +56,8 @@ export function BrowserRecognition({active,onTransfer,onActivity}:RecognitionPro
  return <section className="recognition guided-recognition browser-recognition"><header className="recognition-heading"><h1>ブラウザー内Whisper</h1><span>{working?'処理中':installed[modelId]?'導入済み':'未導入'}</span></header>
  {!supported&&<p role="alert" className="error">このブラウザーでは必要な音声処理・キャッシュ機能を利用できません。</p>}{error&&<p role="alert" className="error">{error}</p>}
  <div className="panes"><section className="setup-column"><div className="setup-card setup-content"><h2>モデル</h2><div className="model-fields"><label>ブラウザーモデル<select aria-label="ブラウザー認識モデル" disabled={working} value={modelId} onChange={e=>{engine.stop();setModelId(e.target.value);setMessage('');}}>{browserWhisperModels.map(m=><option key={m.id} value={m.id}>{m.label}（{installed[m.id]?'導入済み':'未導入'}）</option>)}</select></label><span>処理方式：このブラウザーのCPU（WASM）</span><button className="primary-action" disabled={working||!supported} onClick={()=>void install()}>{installed[modelId]?'モデルを再点検・再導入':'このブラウザーへ導入'}</button></div><p role="status">{message}</p></div>
- <div className="setup-card setup-content"><div className="file-drop-zone" aria-label="ブラウザー認識の動画ドロップ領域" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();if(e.dataTransfer.files.length===1)load(e.dataTransfer.files[0]);}}><button disabled={working} onClick={async()=>{const files=await chooseFiles('media');if(files[0])load(files[0]);}}>動画・音声を読み込む</button><p>{file?.name??'動画・音声をドロップ'}</p></div>
- <details className="recognition-options"><summary>認識範囲：{startMode==='edge'?'先頭':start} → {endMode==='edge'?'末尾':end}</summary><div className="row"><label>開始<select aria-label="ブラウザー認識開始位置" disabled={working} value={startMode} onChange={e=>setStartMode(e.target.value as BoundaryMode)}><option value="edge">先頭</option><option value="custom">カスタム</option></select></label><input aria-label="ブラウザー認識開始時刻" value={start} disabled={working||startMode==='edge'} placeholder="hh:mm:ss.sss" onChange={e=>setStart(e.target.value)}/><label>終了<select aria-label="ブラウザー認識終了位置" disabled={working} value={endMode} onChange={e=>setEndMode(e.target.value as BoundaryMode)}><option value="edge">末尾</option><option value="custom">カスタム</option></select></label><input aria-label="ブラウザー認識終了時刻" value={end} disabled={working||endMode==='edge'} placeholder="hh:mm:ss.sss" onChange={e=>setEnd(e.target.value)}/></div></details>
- <button className="primary-action start-recognition" disabled={working||!file||!installed[modelId]||!supported} onClick={()=>void recognize()}>ブラウザーで文字起こし開始</button></div>{url&&<video ref={player} controls src={url} preload="metadata"/>}
+ <div className="setup-card setup-content"><MediaDrop disabled={working} onLoad={load} label="ブラウザー認識の動画ドロップ領域"/>
+ <RecognitionRangeControls range={range} disabled={working||!file} prefix="ブラウザー認識"/>
+ <button className="primary-action start-recognition" disabled={working||!file||!installed[modelId]||!supported||!range.valid} onClick={()=>void recognize()}>ブラウザーで文字起こし開始</button></div>{url&&<video ref={player} controls src={url} preload="metadata"/>}
  </section><section className="recognition-output">{working&&<button className="cancel-action" onClick={()=>controller.current?.abort()}>{installing?'導入を中止':'認識中止'}</button>}{job&&<><section className="recognition-progress"><strong>{job.status==='complete'?'完了':job.status==='running'?'処理中':job.status==='cancelled'?'中止':'エラー'}・{Math.round(position.fraction*100)}%</strong><progress aria-label="ブラウザー認識の進捗" max={1} value={position.fraction}/><p aria-label="ブラウザー認識の終了見込み">{estimate?`認識終了見込み（推定） ${new Date(estimate.finishAt).toLocaleTimeString('ja-JP')}・残り約${Math.ceil(estimate.remainingSeconds)}秒`:job.status==='running'?'終了見込み：進捗が得られるまで算出待ち':''}</p><p>確定字幕 {segments.length}件</p></section><div className="row"><button className="primary-action" disabled={working||job.status!=='complete'||!segments.length||!file||sourceKey.current!==fileKey(file)} onClick={()=>{if(file){player.current?.pause();onTransfer({media:file,vtt:segmentsToVtt(segments),name:outputName()});}}}>結果を工程2へ追加</button><button disabled={!segments.length} onClick={()=>download()}>{job.status==='complete'?'VTTを保存':'部分VTTを保存'}</button><button onClick={()=>download(true)}>処理記録を保存</button></div><div className="results"><table><thead><tr><th>時刻</th><th>本文</th></tr></thead><tbody>{segments.map(s=><tr key={s.id}><td><button onClick={()=>{if(player.current)player.current.currentTime=s.start;}}>{s.start.toFixed(3)}</button></td><td>{s.text}</td></tr>)}</tbody></table></div></>}</section></div></section>;
 }

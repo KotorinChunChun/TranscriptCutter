@@ -71,7 +71,7 @@ export function createWebServer({directory=fileURLToPath(new URL('../dist-web/',
 }
 async function main(){
  const {startStandalone}=await import('./standalone-web.mjs');
- const server=await startStandalone({directory:fileURLToPath(new URL('../dist-web/',import.meta.url)),version:'0.1.2',args:['--no-open']});
+ const server=await startStandalone({directory:fileURLToPath(new URL('../dist-web/',import.meta.url)),version:'0.1.3',args:['--no-open']});
  const close=()=>server.close(()=>process.exit(0));process.on('SIGTERM',close);process.on('SIGINT',close);
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href)main().catch(error=>{console.error(error.message);process.exitCode=1;});
