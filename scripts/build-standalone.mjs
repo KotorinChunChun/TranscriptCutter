@@ -14,7 +14,7 @@ const {version}=JSON.parse(await readFile(resolve(root,'package.json'),'utf8'));
 const work=resolve(root,'runtime','standalone-build'),out=resolve(root,'release',`TranscriptCutter-web-v${version}.exe`);
 await mkdir(work,{recursive:true});await mkdir(dirname(out),{recursive:true});
 execFileSync(process.execPath,[resolve(root,'scripts/build-web.mjs')],{stdio:'inherit'});
-const assets={};for(const name of ['index.html','app.js','app.css'])assets['/'+name]=(await readFile(resolve(root,'dist-web',name))).toString('base64');
+const assets={};for(const name of ['index.html','app.js','app.css','browser-whisper-worker.js'])assets['/'+name]=(await readFile(resolve(root,'dist-web',name))).toString('base64');
 let licenses='TranscriptCutter Web '+version+'\n\nNode.js source: https://nodejs.org/download/release/'+process.version+'/\n';
 const lock=JSON.parse(await readFile(resolve(root,'package-lock.json'),'utf8'));
 const components=[['Node.js',resolve(dirname(process.execPath),'LICENSE')],...['react','react-dom','scheduler','lucide-react','mediabunny'].map(name=>[name,resolve(root,'node_modules',name,'LICENSE')])];

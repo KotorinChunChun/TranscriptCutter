@@ -15,7 +15,9 @@ export function recognitionRange(startMode:BoundaryMode,start:string,endMode:Bou
 export function supportedModel(m:Model){
  const x=m.x_meeting;if(!x||!['whisper','haas','qwen','reazon','parakeet','nemotron-asr'].includes(x.engineId)||x.task!==undefined&&x.task!=='transcription')return false;
  if(!Array.isArray(x.processingMethods)||!x.processingMethods.length)return false;
- return x.supported!==false&&!(x.installable===false&&!['installed','ready'].includes(x.availability??''))&&![x.availability,x.managementState,x.runtimeStatus].some(value=>['unavailable','unsupported','missing_runtime','runtime_error','unconfigured','not_supported'].includes(String(value)));
+ if(x.supported===false||x.supportStatus==='unsupported')return false;
+ if(x.supported===true&&x.runtimeInstallable===true)return true;
+ return !(x.installable===false&&!['installed','ready'].includes(x.availability??''))&&![x.availability,x.managementState,x.runtimeStatus].some(value=>['unavailable','unsupported','missing_runtime','runtime_error','unconfigured','not_supported'].includes(String(value)));
 }
 export function effectiveDiarization(preference:boolean,model:Model|undefined){return preference&&model?.x_meeting.diarization===true;}
 export function finishEstimate(job:Job|null,now:number):{remainingSeconds:number;finishAt:number}|null{
