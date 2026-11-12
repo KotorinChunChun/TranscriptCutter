@@ -6,7 +6,7 @@ import {resolve,extname,sep} from 'node:path';
 import {pathToFileURL,fileURLToPath} from 'node:url';
 import {connectSpeech,serverUrl,ConnectionError,networkConnectionError} from './speech-connection.mjs';
 const allowed=/^\/(?:api\/(?:health|jobs(?:\/[a-fA-F0-9]{32}(?:\/(?:segments|cancel|delete))?)?)|v1\/models)$/;
-export function createWebServer({directory=fileURLToPath(new URL('../dist-web/',import.meta.url)),assets,speechUrl='http://127.0.0.1:8769',speechToken=''}={}){
+export function createWebServer({directory=fileURLToPath(new URL('../dist-web/',import.meta.url)),assets,speechUrl='http://127.0.0.1:8769',speechToken='',launcherInfo}={}){
  const root=resolve(directory),initial=serverUrl(speechUrl),sessions=new Map();
  const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(value));};
  const fail=(res,error)=>json(res,error instanceof ConnectionError?error.status:502,{error:error instanceof ConnectionError?error.message:'接続操作に失敗しました。',code:error instanceof ConnectionError?error.code:'connection_failed'});
@@ -27,6 +27,7 @@ export function createWebServer({directory=fileURLToPath(new URL('../dist-web/',
   if(!hosts.includes(host)||req.headers.origin&&req.headers.origin!==`http://${host}`){res.writeHead(403).end('接続元を確認してください。');return;}
   const url=new URL(req.url,`http://${host}`);
   res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Cache-Control','no-store');
+  if(url.pathname==='/launcher'&&launcherInfo&&req.method==='GET'){json(res,200,launcherInfo);return;}
   if(url.pathname==='/connection'){
    try{
     const session=sessionFor(req);
