@@ -241,6 +241,7 @@ export function VideoExportDialog({ open, file, cuts, subtitleEndMs, onClose, on
   };
 
 
+  if (!open) return null;
   return <Modal title={info?.hasVideo === false ? "カットして音声を書き出す" : "カットして動画を書き出す"} eyebrow="EXPORT CUT MEDIA" wide onClose={closeDialog} footer={<>
     {rendering ? <><span className="modal-footer-note">この画面を閉じると、書き出しを中断します。</span><button className="button secondary" onClick={cancelRendering} disabled={cancelling}><Square size={14}/>{cancelling ? "中断しています…" : "書き出しを中断"}</button></> : <><button className="button secondary" onClick={closeDialog}>閉じる</button><button className="button primary" disabled={!canRender} onClick={() => void startRendering()}>{result ? <RotateCcw size={16}/> : <Scissors size={16}/>} {result ? "現在のカットで作り直す" : `カットして${outputType}を書き出す`}</button></>}
   </>}>
