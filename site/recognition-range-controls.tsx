@@ -15,11 +15,11 @@ export function useRecognitionRange(file:File|null){
  let valid=true;try{resolveRange(value,duration);}catch{valid=false;}
  return {value,setValue,duration,loading,mediaError:media.file===file?media.error:'',valid:valid&&!loading,request:()=>rangeRequest(value,duration)};
 }
-export function RecognitionRangeControls({range,disabled=false,prefix='認識',onSeek}:{range:ReturnType<typeof useRecognitionRange>;disabled?:boolean;prefix?:string;onSeek?:(seconds:number)=>void}){
+export function RecognitionRangeControls({range,disabled=false,prefix='認識',onSeek}:{range:ReturnType<typeof useRecognitionRange>;disabled?:boolean;prefix?:string;onSeek?:(seconds:number,side:'start'|'end')=>void}){
  const {value,duration,setValue,loading}=range;let resolved:ReturnType<typeof resolveRange>|null=null,error='';try{resolved=resolveRange(value,duration);}catch(e){error=e instanceof Error?e.message:String(e);}
  const locked=disabled||loading,max=Math.ceil((duration??0)*1000),from=resolved?.from??0,to=resolved?.to??duration??0;
  const startText=value.startMode==='custom'?value.start:rangeClock(from),endText=value.endMode==='custom'?value.end:rangeClock(to,true);
- const seek=(next:RangeSelection,side:'start'|'end')=>{const seconds=rangeSeekTarget(next,side,duration);if(seconds!==null)onSeek?.(seconds);};
+ const seek=(next:RangeSelection,side:'start'|'end')=>{const seconds=rangeSeekTarget(next,side,duration);if(seconds!==null)onSeek?.(seconds,side);};
  const commit=(next:RangeSelection,side:'start'|'end')=>{setValue(next);seek(next,side);};
  const select=(side:'start'|'end',mode:StartMode|EndMode)=>commit(changeRangeMode(value,side,mode,duration),side);
  const move=(side:'start'|'end',milliseconds:number)=>{if(duration)commit(moveRangeHandle(value,side,milliseconds>=max?duration:milliseconds/1000,duration),side);};

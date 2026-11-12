@@ -13,7 +13,8 @@ export function recognitionRange(startMode:BoundaryMode,start:string,endMode:Bou
  return {from,to};
 }
 export function supportedModel(m:Model){
- const x=m.x_meeting;if(!x||!['whisper','haas','qwen','reazon','parakeet','nemotron-asr'].includes(x.engineId)||x.task!==undefined&&x.task!=='transcription')return false;
+ const x=m.x_meeting;if(!x||!['whisper','haas','qwen','reazon','parakeet','nemotron-asr','nemotron-transcribe'].includes(x.engineId)||x.task!==undefined&&!['transcription','integrated'].includes(x.task))return false;
+ if(x.engineId==='nemotron-transcribe'&&x.integratedDiarization!==true)return false;
  if(!Array.isArray(x.processingMethods)||!x.processingMethods.length)return false;
  if(x.supported===false||x.supportStatus==='unsupported')return false;
  if(x.supported===true&&x.runtimeInstallable===true)return true;
