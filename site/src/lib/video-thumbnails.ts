@@ -1,7 +1,8 @@
 import {thumbnailTimes,compareFrames,type TimeRange,type FrameDifference} from './timeline-review';
+import {measure} from '../../processing-metrics';
 export type Thumbnail=TimeRange & {url:string};
 const aborted=()=>new DOMException('画像生成を中断しました。','AbortError');
-export async function generateThumbnails(file:File,range:TimeRange,signal:AbortSignal,onFrame:(frame:Thumbnail,done:number,total:number)=>void):Promise<FrameDifference[]>{
+async function generateThumbnailsImpl(file:File,range:TimeRange,signal:AbortSignal,onFrame:(frame:Thumbnail,done:number,total:number)=>void):Promise<FrameDifference[]>{
  const video=document.createElement('video'),source=URL.createObjectURL(file);video.muted=true;video.playsInline=true;video.preload='auto';
  const wait=(event:string,begin?:()=>void)=>new Promise<void>((resolve,reject)=>{
   const finish=(error?:unknown)=>{clearTimeout(timer);video.removeEventListener(event,ready);video.removeEventListener('error',fail);signal.removeEventListener('abort',cancel);error?reject(error):resolve();};
@@ -25,3 +26,4 @@ export async function generateThumbnails(file:File,range:TimeRange,signal:AbortS
   return differences;
  }finally{video.pause();video.removeAttribute('src');video.load();URL.revokeObjectURL(source);}
 }
+export function generateThumbnails(...args:Parameters<typeof generateThumbnailsImpl>){return measure('thumbnails-and-visual-analysis',{fileName:args[0].name,range:args[1]},()=>generateThumbnailsImpl(...args));}

@@ -7,6 +7,7 @@ import {
 import type { InputAudioTrack, InputVideoTrack, StreamTargetChunk } from "mediabunny";
 import { buildMediaCutPlan } from "./media-plan";
 import type { KeepSegment, MediaCutInput } from "./media-plan";
+import {measure} from '../../processing-metrics';
 
 export interface MediaFileInspection {
   durationMs: number;
@@ -99,7 +100,7 @@ async function analyzeInput(input: Input): Promise<MediaFileInspection> {
   };
 }
 
-export async function inspectMediaFile(file: File): Promise<MediaFileInspection> {
+async function inspectMediaFileImpl(file: File): Promise<MediaFileInspection> {
   const cached = inspectionCache.get(file);
   if (cached) return cached;
   const input = openInput(file);
@@ -348,7 +349,7 @@ async function* audioSamplesForRange(track: InputAudioTrack, range: KeepSegment,
   } finally { seed?.close(); await iterator.return().catch(() => {}); }
 }
 
-export async function renderCutMedia(options: RenderCutMediaOptions): Promise<CutMediaResult> {
+async function renderCutMediaImpl(options: RenderCutMediaOptions): Promise<CutMediaResult> {
   const { file, cuts, subtitleEndMs, format, signal, onProgress } = options;
   checkAbort(signal);
   if (!Number.isSafeInteger(subtitleEndMs) || subtitleEndMs < 0) {
@@ -457,3 +458,5 @@ export async function renderCutMedia(options: RenderCutMediaOptions): Promise<Cu
     if (!successful) await storage?.release();
   }
 }
+export function inspectMediaFile(file:File){return measure('media-inspection',{fileName:file.name},()=>inspectMediaFileImpl(file));}
+export function renderCutMedia(options:RenderCutMediaOptions){return measure('media-export',{fileName:options.file.name,format:options.format},()=>renderCutMediaImpl(options));}
