@@ -1,3 +1,5 @@
+import {createPortal} from 'react-dom';
+import {Modal} from './editor-ui';
 import {confirmAction} from '@/browser';
 "use client";
 
@@ -198,6 +200,7 @@ export function VttComparison({ session, onChange, onAddFiles, onApply, onExport
   const [display, setDisplay] = useState({ key: "", count: PAGE_SIZE });
   const [aliasesOpen, setAliasesOpen] = useState(false);
   const [announcement, setAnnouncement] = useState("");
+  const [draftColumns,setDraftColumns]=useState<{id:string;name:string;kind:'custom'|'ai'}[]>([]),[draftValues,setDraftValues]=useState<Record<string,string>>({}),[collapsed,setCollapsed]=useState<Set<string>>(new Set()),[addMenu,setAddMenu]=useState<{top:number;right:number}|null>(null),[aiDialog,setAiDialog]=useState(false);
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const headingScrollRef = useRef<HTMLDivElement>(null);
   const timelineScrollRef = useRef<HTMLDivElement>(null);
@@ -228,12 +231,14 @@ export function VttComparison({ session, onChange, onAddFiles, onApply, onExport
     });
   }, [rows, sources, query, differencesOnly, session?.speakerAliases]);
 
+  const speakerRuns=useMemo(()=>{const result=new Map<string,{key:string;label:string;first:boolean;count:number}>();if(!session)return result;let run:{key:string;label:string;ids:string[]}|null=null;const finish=()=>{if(run)run.ids.forEach((id,index)=>result.set(id,{key:run!.key,label:run!.label,first:index===0,count:run!.ids.length}));};for(const row of filteredRows){const choice=getComparisonChoice(session,row),picked=choice.speaker&&'sourceId' in choice.speaker?choice.speaker.sourceId:choice.textSourceId??session.referenceId,source=session.sources.find(s=>s.id===picked)!,cues=row.candidates[picked]??[];const label=choice.speaker&&'custom' in choice.speaker?choice.speaker.custom:choice.speaker&&'sourceId' in choice.speaker?speakerLabel(session,source,choice.speaker.label):[...new Set(cues.map(c=>speakerLabel(session,source,c.speaker)))].join(' / ')||'話者不明';if(!run||run.label!==label){finish();run={key:row.id,label,ids:[]};}run.ids.push(row.id);}finish();return result;},[filteredRows,session]);
+  useEffect(()=>{if(!addMenu)return;const close=(event:Event)=>{if(!(event.target instanceof Element)||!event.target.closest('.comparison-add-menu,.comparison-add-header'))setAddMenu(null);};window.addEventListener('click',close);return()=>window.removeEventListener('click',close);},[addMenu]);
   useEffect(() => {
     const node = loadMoreRef.current;
     if (!node || visibleCount >= filteredRows.length || typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver(entries => {
       if (entries.some(entry => entry.isIntersecting)) setDisplay(current => ({ key: displayKey, count: Math.min(filteredRows.length, (current.key === displayKey ? current.count : PAGE_SIZE) + PAGE_SIZE) }));
-    }, { root: node.closest(".comparison-scroll-panel"), rootMargin: "700px 0px" });
+    }, { root: timelineScrollRef.current, rootMargin: "700px 0px" });
     observer.observe(node);
     return () => observer.disconnect();
   }, [visibleCount, filteredRows.length, displayKey]);
@@ -243,6 +248,7 @@ export function VttComparison({ session, onChange, onAddFiles, onApply, onExport
   };
   const choose = (row: ComparisonRow, next: ComparisonChoice) => {
     if (!session) return;
+    if(next.textSourceId){const text=readText(row,next.textSourceId);setDraftValues(old=>{const values={...old};for(const id of editableIds())values[id+':'+row.id]=text;return values;});}
     onChange({ ...session, choices: { ...session.choices, [row.id]: next } });
     setAnnouncement(`${formatTime(row.start, true)}の採用内容を更新しました`);
   };
@@ -250,6 +256,7 @@ export function VttComparison({ session, onChange, onAddFiles, onApply, onExport
     if (!session) return;
     const choices: ComparisonSession["choices"] = {};
     for (const row of rows) choices[row.id] = { ...getComparisonChoice(session, row), textSourceId: row.candidates[source.id]?.length ? source.id : null };
+    setDraftValues(old=>{const values={...old};for(const row of rows)for(const id of editableIds())values[id+':'+row.id]=readText(row,source.id);return values;});
     onChange({ ...session, choices });
     setAnnouncement(`${source.name}の字幕をすべて採用しました。個別に指定した話者は保持しています。`);
   };
@@ -293,6 +300,10 @@ export function VttComparison({ session, onChange, onAddFiles, onApply, onExport
     onChange({ ...session, speakerAliases: { ...session.speakerAliases, [sourceId]: aliases } });
   };
 
+  const editableIds=()=>[...(session?.sources.filter(s=>s.generated).map(s=>s.id)??[]),...draftColumns.map(c=>c.id)];
+  const readText=(row:ComparisonRow,id:string)=>draftValues[id+':'+row.id]??(row.candidates[id]??[]).map(c=>c.text).join('\n');
+  const addDraft=(kind:'custom'|'ai')=>{if(!session)return;const column={id:crypto.randomUUID(),name:kind==='ai'?'AI生成案':'カスタム'+(draftColumns.filter(c=>c.kind==='custom').length+1),kind};setDraftColumns(old=>[...old,column]);setDraftValues(old=>{const values={...old};for(const row of rows){const selected=kind==='ai'?session.sources.find(s=>s.generated)?.id:getComparisonChoice(session,row).textSourceId;values[column.id+':'+row.id]=selected?readText(row,selected):'';}return values;});setAddMenu(null);setAiDialog(false);};
+  const draftCell=(id:string,name:string,row:ComparisonRow)=><div className="comparison-draft-cell" key={id}><textarea aria-label={name+' '+formatTime(row.start,true)+'の本文'} rows={2} value={readText(row,id)} placeholder="本文を編集" disabled={busy} onChange={e=>setDraftValues(old=>({...old,[id+':'+row.id]:e.target.value}))}/></div>;
   if (!session || !sources?.length || !summary) return <section className="vtt-comparison comparison-empty-workspace" aria-label="VTT比較">
     <div className="comparison-empty-symbol"><Columns3 size={26}/></div>
     <h2>VTTを並べて比較</h2>
@@ -308,11 +319,11 @@ export function VttComparison({ session, onChange, onAddFiles, onApply, onExport
   const aliasCount = Object.values(session.speakerAliases).reduce((total, map) => total + Object.values(map).filter(Boolean).length, 0);
   const hasSpeakerOverrides = rows.some(row => getComparisonChoice(session, row).speaker !== null);
   const shownRows = filteredRows.slice(0, visibleCount);
-  const timelineStyle = { "--comparison-columns": sources.length } as CSSProperties;
+  const timelineStyle = { "--comparison-columns": sources.length+draftColumns.length } as CSSProperties;
 
-  return <section className={`vtt-comparison${simple?" comparison-simple":""}`} aria-label="VTT比較" style={timelineStyle}>
+  return <section className={`vtt-comparison comparison-layout-preview${simple?" comparison-simple":""}`} aria-label="VTT比較" style={timelineStyle}>
     <div className="comparison-workspace-heading">
-      <div className="comparison-title"><span className="comparison-heading-icon"><Columns3 size={19}/></span><h2>VTTを比較</h2><span className="comparison-source-count">{sources.length} / 4</span></div>
+      <div className="comparison-title"><span className="comparison-heading-icon"><Columns3 size={19}/></span><h2>VTTを比較</h2><span className="comparison-source-count">{sources.filter(source=>!source.generated).length}字幕{draftColumns.length+sources.filter(source=>source.generated).length>0&&<>・編集{draftColumns.length+sources.filter(source=>source.generated).length}列</>}</span></div>
       <div className="comparison-main-actions">
         <button type="button" className="button secondary small" disabled={busy || sources.filter(s=>!s.generated).length >= 3} onClick={onAddFiles} title={sources.filter(s=>!s.generated).length >= 3 ? "比較できるVTTは最大3つです" : "比較するVTTを追加"}><Plus size={14}/>VTTを追加</button>
         <button type="button" className="button secondary small" disabled={busy || !summary.cueCount} onClick={onExportVtt}><ArrowDownToLine size={14}/>採用VTTを保存</button>
@@ -349,41 +360,49 @@ export function VttComparison({ session, onChange, onAddFiles, onApply, onExport
     <div className="comparison-grid-frame">
       <div className="comparison-heading-scroll" ref={headingScrollRef} onScroll={event => syncScroll(event, timelineScrollRef.current)}>
         <div className="comparison-grid comparison-column-headers">
-          <div className="comparison-axis-heading"><span>元動画の時刻</span><ArrowDown size={13}/></div>
+          <div className="comparison-speaker-heading"><span>話者</span><button className="comparison-text-button" onClick={()=>{const keys=[...new Set([...speakerRuns.values()].filter(r=>r.count>1).map(r=>r.key))];setCollapsed(old=>old.size?new Set():new Set(keys));}}>{collapsed.size?'すべて展開':'まとめる'}</button></div><div className="comparison-axis-heading"><span>元動画の時刻</span><ArrowDown size={13}/></div>
           {sources.map((source, index) => <div className={`comparison-model-header model-${index}`} key={source.id}>
             <div className="comparison-model-top"><span className="comparison-model-index">{String.fromCharCode(65 + index)}</span><ModelName name={source.name} onCommit={value => renameSource(source.id, value)} disabled={busy}/><button type="button" className="comparison-mini-icon comparison-remove-source" aria-label={`${source.name}を比較から外す`} title={sources.length <= 1 ? "VTTを1つ以上残してください" : "このモデルを比較から外す"} disabled={busy || sources.length <= 1} onClick={() => removeSource(source)}><X size={14}/></button></div>
             <span className="comparison-model-file" title={source.fileName}><FileText size={11}/>{source.fileName}</span>
             <div className="comparison-model-meta"><span>{source.cues.length.toLocaleString()}字幕</span>{source.id === session.referenceId && <span className="comparison-reference-badge">時間軸の基準</span>}</div>
             <button type="button" className="comparison-bulk-adopt" disabled={busy} aria-label={`${source.name}の字幕をすべて採用`} onClick={() => adoptAllText(source)}><CheckCheck size={13}/>字幕をすべて採用</button>
           </div>)}
+          {draftColumns.map(column=><div className="comparison-model-header comparison-draft-heading" key={column.id}><div className="comparison-model-top"><ModelName name={column.name} onCommit={name=>setDraftColumns(old=>old.map(c=>c.id===column.id?{...c,name}:c))} disabled={busy}/><button className="comparison-mini-icon" aria-label={column.name+'列を閉じる'} onClick={()=>setDraftColumns(old=>old.filter(c=>c.id!==column.id))}><X size={14}/></button></div><span className="comparison-draft-badge">編集可能・画面案</span></div>)}
+          <div className="comparison-add-header"><button className="comparison-plus" aria-label="比較列を追加" aria-expanded={!!addMenu} onClick={event=>{const box=event.currentTarget.getBoundingClientRect();setAddMenu(old=>old?null:{top:box.bottom+4,right:Math.max(8,window.innerWidth-box.right)});}}>＋</button></div>
         </div>
       </div>
       <div className="comparison-timeline-scroll" ref={timelineScrollRef} onScroll={event => syncScroll(event, headingScrollRef.current)} tabIndex={0} aria-label="字幕の比較タイムライン。横にスクロールできます。">
         <div className="comparison-timeline">
           {shownRows.map(row => {
+            const run=speakerRuns.get(row.id);if(run&&!run.first&&collapsed.has(run.key))return null;
             const choice = getComparisonChoice(session, row);
             const chosenSource = sources.find(source => source.id === choice.textSourceId);
             const rowTime = formatTime(row.start, true);
             return <section className={`comparison-row${expanded.has(row.id)?" row-details":""}${!choice.textSourceId ? " row-skipped" : ""}`} key={row.id} data-comparison-row={row.id} aria-label={`${rowTime}からの比較区間`}>
               <div className="comparison-grid">
-                <div className="comparison-time-axis"><button type="button" onClick={() => onSeek(row.start)} disabled={!canPlay || busy} aria-label={`元動画の${rowTime}から再生`}><time>{rowTime}</time><span className="comparison-axis-end">{formatTime(row.end, true)}</span>{canPlay && <span className="comparison-axis-play"><Play size={10}/>再生</span>}</button>{!row.referenceCueId && <span className="comparison-extra-row">基準外の字幕</span>}</div>
-                {sources.map(source => <Candidate key={source.id} session={session} row={row} source={source} choice={choice} onChoice={next => choose(row, next)} canPlay={canPlay} onSeek={onSeek} busy={busy} simple={simple&&!expanded.has(row.id)}/>)}
+                <div className="comparison-speaker-cell">{run?.first&&<button aria-label={run.label+' '+run.count+'発言を'+(collapsed.has(run.key)?'展開':'折りたたむ')} aria-expanded={!collapsed.has(run.key)} disabled={run.count<2} onClick={()=>setCollapsed(old=>{const next=new Set(old);if(next.has(run.key))next.delete(run.key);else next.add(run.key);return next;})}><span>{run.count>1?(collapsed.has(run.key)?'▸':'▾'):''}{run.label}</span>{run.count>1&&<small>{run.count}発言</small>}</button>}</div><div className="comparison-time-axis"><button type="button" onClick={() => onSeek(row.start)} disabled={!canPlay || busy} aria-label={`元動画の${rowTime}から再生`}><time>{rowTime}</time><span className="comparison-axis-end">{formatTime(row.end, true)}</span>{canPlay && <span className="comparison-axis-play"><Play size={10}/>再生</span>}</button>{!row.referenceCueId && <span className="comparison-extra-row">基準外の字幕</span>}</div>
+                {sources.map(source => source.generated?draftCell(source.id,source.name,row):<Candidate key={source.id} session={session} row={row} source={source} choice={choice} onChoice={next => choose(row, next)} canPlay={canPlay} onSeek={onSeek} busy={busy} simple={simple&&!expanded.has(row.id)}/>)}
+                {draftColumns.map(column=>draftCell(column.id,column.name,row))}
+                <div className="comparison-side-details">{simple&&<button className="comparison-text-button" aria-expanded={expanded.has(row.id)} onClick={()=>setExpanded(old=>{const next=new Set(old);if(next.has(row.id))next.delete(row.id);else next.add(row.id);return next;})}>{expanded.has(row.id)?'閉じる':'詳細'}</button>}</div>
               </div>
-              {simple&&<div className="comparison-simple-actions"><button className="comparison-text-button" aria-expanded={expanded.has(row.id)} onClick={()=>setExpanded(old=>{const next=new Set(old);if(next.has(row.id))next.delete(row.id);else next.add(row.id);return next;})}>{expanded.has(row.id)?'閉じる':'詳細'}</button><button className="comparison-text-button" disabled={busy||!choice.textSourceId} onClick={()=>choose(row,{...choice,textSourceId:null})}>採用しない</button></div>}<div className="comparison-result-bar">
+              <div className="comparison-result-bar">
                 <span className={`comparison-result-state${choice.textSourceId ? " adopted" : ""}`}>{choice.textSourceId ? <Check size={13}/> : <span className="comparison-skip-dot"/>}{choice.textSourceId ? "採用" : "未採用"}</span>
                 <div className="comparison-result-details"><span className="comparison-result-text"><AlignLeft size={12}/>{chosenSource ? <strong>{chosenSource.name}</strong> : <span>字幕なし</span>}</span><span className={`comparison-result-speaker${choice.speaker ? " overridden" : ""}`}><UserRound size={12}/><SpeakerResult session={session} row={row} choice={choice}/></span></div>
-                <div className="comparison-row-actions"><button type="button" className={`comparison-text-button${choice.speaker === null ? " current" : ""}`} disabled={busy || choice.speaker === null} aria-label={`${rowTime}の話者を字幕と同じにする`} onClick={() => choose(row, { ...choice, speaker: null })}><RotateCcw size={11}/>字幕と同じ</button><CustomSpeaker rowTime={rowTime} value={choice.speaker && "custom" in choice.speaker ? choice.speaker.custom : ""} disabled={busy} onCommit={name => choose(row, { ...choice, speaker: { custom: name } })}/><button type="button" className="comparison-text-button comparison-skip-button" disabled={busy || choice.textSourceId === null} onClick={() => choose(row, { ...choice, textSourceId: null })} aria-label={`${rowTime}の区間を採用しない`}><X size={12}/>採用しない</button></div>
+                <div className="comparison-row-actions"><button type="button" className={`comparison-text-button${choice.speaker === null ? " current" : ""}`} disabled={busy || choice.speaker === null} aria-label={`${rowTime}の話者を字幕と同じにする`} onClick={() => choose(row, { ...choice, speaker: null })}><RotateCcw size={11}/>字幕と同じ</button><CustomSpeaker rowTime={rowTime} value={choice.speaker && "custom" in choice.speaker ? choice.speaker.custom : ""} disabled={busy} onCommit={name => choose(row, { ...choice, speaker: { custom: name } })}/></div>
               </div>
             </section>;
           })}
           {!filteredRows.length && <div className="comparison-no-results"><Search size={24}/><h3>該当する区間がありません</h3><p>{differencesOnly ? "差分のみの表示や、検索条件を変更してください。" : "別の言葉・話者名・時刻で検索してください。"}</p><button type="button" className="button secondary small" onClick={() => { setQuery(""); setDifferencesOnly(false); }}>絞り込みを解除</button></div>}
         </div>
+    <div className="comparison-load-more" ref={loadMoreRef}>{visibleCount < filteredRows.length ? <button type="button" className="button secondary small" onClick={() => setDisplay({ key: displayKey, count: Math.min(filteredRows.length, visibleCount + PAGE_SIZE) })}><ArrowDown size={13}/>スクロールして続きを表示<span>{Math.min(visibleCount, filteredRows.length).toLocaleString()} / {filteredRows.length.toLocaleString()}</span></button> : <span>{filteredRows.length.toLocaleString()}区間を表示{filteredRows.length !== rows.length ? ` / 全${rows.length.toLocaleString()}区間` : " · 最後まで表示しています"}</span>}<span className="comparison-pan-hint"><ArrowLeftRight size={12}/>横にスクロールして比較</span></div>
       </div>
     </div>
 
-    <div className="comparison-load-more" ref={loadMoreRef}>{visibleCount < filteredRows.length ? <button type="button" className="button secondary small" onClick={() => setDisplay({ key: displayKey, count: Math.min(filteredRows.length, visibleCount + PAGE_SIZE) })}><ArrowDown size={13}/>スクロールして続きを表示<span>{Math.min(visibleCount, filteredRows.length).toLocaleString()} / {filteredRows.length.toLocaleString()}</span></button> : <span>{filteredRows.length.toLocaleString()}区間を表示{filteredRows.length !== rows.length ? ` / 全${rows.length.toLocaleString()}区間` : " · 最後まで表示しています"}</span>}<span className="comparison-pan-hint"><ArrowLeftRight size={12}/>横にスクロールして比較</span></div>
+
 
     <div className="comparison-bottom-bar"><div className="comparison-bottom-summary"><div className="comparison-bottom-summary-main"><span className="comparison-bottom-stat"><CheckCheck size={15}/><strong>{summary.cueCount.toLocaleString()}</strong> 字幕を採用</span>{summary.cueCount > 0 && <span className="comparison-end-time"><Scissors size={12}/>採用VTTの終了 <time>{formatTime(adoptedEnd, true)}</time></span>}</div>{summary.cueCount > 0 && <p className="comparison-bottom-note">会話編集に反映後も、字幕のない末尾は標準で保持します。</p>}<p className="comparison-bottom-note">検索・差分表示にかかわらず、採用した全区間を書き出します。</p></div><button type="button" className="comparison-text-button" disabled={busy || !hasSpeakerOverrides} onClick={resetSpeakers}><RotateCcw size={12}/>すべての話者を字幕に合わせる</button></div>
+    {addMenu&&createPortal(<div className="comparison-add-menu" role="menu" aria-label="追加する列" style={{top:addMenu.top,right:addMenu.right}}><button role="menuitem" onClick={()=>addDraft('custom')}>カスタム</button><button role="menuitem" onClick={()=>{setAddMenu(null);setAiDialog(true);}}>AI生成</button></div>,document.body)}
+    {aiDialog&&<Modal title="AI生成列の設定（画面案）" onClose={()=>setAiDialog(false)} footer={<><button className="button secondary" onClick={()=>setAiDialog(false)}>キャンセル</button><button className="button primary" onClick={()=>addDraft('ai')}>AI列を表示</button></>}><div className="cleanup-sources">{sources.filter(s=>!s.generated).map(source=><label key={source.id}><input type="checkbox" defaultChecked/>{source.name}</label>)}</div><label className="form-field">モデル<select className="select-input"><option>Codexの既定モデル</option></select></label><label><input type="checkbox" defaultChecked/>用語辞書を使う</label><label><input type="checkbox" defaultChecked/>フィラーを削除</label><p>画面案のため、AI処理は実行しません。</p></Modal>}
     <div className="comparison-live-status" aria-live="polite" aria-atomic="true">{announcement}</div>
   </section>;
 }
