@@ -16,6 +16,7 @@ const {
   getComparisonSpeakers, getSelectedCues, getComparisonSummary,
   exportComparisonJson, importComparisonJson,
   toggleComparisonText, getComparisonSkippedRanges,
+  createEditableComparison, adoptComparisonChoice, editComparisonCue,
 } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`);
 
 const cue = (id, text, start, end, speaker = "話者1") => ({ id, text, start, end, speaker, sourceIds: [id], sourceCount: 1 });
@@ -28,6 +29,39 @@ const chooseAll = (session, sourceId) => ({
   }])),
 });
 const choose = (session, row, textSourceId, speaker = null) => ({ ...session, choices: { ...session.choices, [row.id]: { textSourceId, speaker } } });
+
+test("editable columns: adoption copies original cues, edited output and blank cells survive JSON",()=>{
+  const initial=createComparisonSession([model('a',[cue('a0','元の本文',0,3000),cue('a1','次の本文',4000,7000)]),model('b',[cue('b0','候補B',0,3000,'話者B')])]);
+  let session=createEditableComparison(initial),rows=buildComparisonRows(session),custom=session.sources.find(source=>source.editable);
+  session=adoptComparisonChoice(session,rows[0],{textSourceId:'b',speaker:null});rows=buildComparisonRows(session);
+  assert.equal(rows[0].candidates[custom.id][0].text,'候補B');
+  assert.equal(getComparisonChoice(session,rows[0]).textSourceId,'b');
+  assert.equal(getSelectedCues(session)[0].speaker,'話者B');
+  session=editComparisonCue(session,rows[0],custom.id,rows[0].candidates[custom.id][0].id,'編集済みの本文');
+  session=importComparisonJson(exportComparisonJson(session));rows=buildComparisonRows(session);
+  assert.equal(getSelectedCues(session)[0].text,'編集済みの本文');
+  assert.equal(session.sources[0].cues[0].text,'元の本文');
+  session=adoptComparisonChoice(session,rows[0],toggleComparisonText(session,rows[0],'b',true));
+  assert.equal(getComparisonChoice(session,rows[0]).textSourceId,null);
+  for(const row of buildComparisonRows(session)){const item=row.candidates[custom.id][0];if(item)session=editComparisonCue(session,row,custom.id,item.id,'');}
+  assert.deepEqual(getSelectedCues(importComparisonJson(exportComparisonJson(session))),[]);
+  assert.equal(session.sources.find(source=>source.editable).cues.length,0);
+});
+
+test("editable columns: AI initial values use the single fourth slot and editing preserves cue timestamps",()=>{
+  let session=createComparisonSession([model('a',[cue('a0','元A',0,4000)]),model('b',[cue('b0','元B',0,4000)]),model('c',[cue('c0','元C',0,4000)])]);
+  session=createEditableComparison(session,{...model('ai',[cue('ai0','AI本文1',100,1800),cue('ai1','AI本文2',1900,3900,'話者2')]),generated:true});
+  let row=buildComparisonRows(session)[0];
+  assert.equal(session.sources.length,4);
+  assert.equal(getComparisonChoice(session,row).textSourceId,'a');
+  session=editComparisonCue(session,row,'ai','ai1','AI修正後');
+  assert.deepEqual(getSelectedCues(session).map(cue=>[cue.start,cue.end,cue.text]),[[100,1800,'AI本文1'],[1900,3900,'AI修正後']]);
+  assert.throws(()=>addComparisonSources(session,[model('d',[cue('d','過剰',0,4000)])]));
+  assert.throws(()=>editComparisonCue(session,row,'a','a0','元変更'));
+  session=createEditableComparison(session,{...model('ai2',[cue('ai2','再生成',0,4000)]),generated:true});
+  assert.equal(session.sources.length,4);
+  assert.equal(session.sources.filter(source=>source.editable).length,1);
+});
 
 test("comparison playback: toggling adoption permits zero choices and follows the adopted speaker", () => {
   const session=createComparisonSession([model('a',[cue('a','先頭',0,3000,'話者A')]),model('b',[cue('b','別案',0,3000,'話者B')])]);

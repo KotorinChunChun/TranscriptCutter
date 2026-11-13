@@ -8,9 +8,11 @@ export interface ComparisonSource {
   cues: Cue[];
   warnings: string[];
   generated?: boolean;
+  editable?: boolean;
+  anchors?: Record<string, string>;
 }
 export type SpeakerChoice = { sourceId: string; label: string | null } | { custom: string } | null;
-export interface ComparisonChoice { textSourceId: string | null; speaker: SpeakerChoice }
+export interface ComparisonChoice { textSourceId: string | null; speaker: SpeakerChoice; outputSourceId?: string }
 export interface ComparisonSession {
   schemaVersion: 1;
   kind: "vtt-dialogue-comparison";
@@ -87,21 +89,26 @@ function cloneCue(value: unknown): Cue {
 }
 function normalizeSource(value: unknown): ComparisonSource {
   if (!record(value)) throw new Error("比較元の形式が正しくありません。");
-  keys(value, ["id", "name", "fileName", "cues", "warnings", "generated"], "比較元");
+  keys(value, ["id", "name", "fileName", "cues", "warnings", "generated", "editable", "anchors"], "比較元");
   if(value.generated!==undefined&&typeof value.generated!=="boolean")throw new Error("整理案の形式が不正です。");
+  if(value.editable!==undefined&&(typeof value.editable!=="boolean"||value.editable&&!value.generated))throw new Error("編集列の形式が不正です。");
   const id = identifier(value.id, "モデルID");
   const name = boundedText(value.name, 128, "モデル名").trim();
   const fileName = boundedText(value.fileName, 512, "ファイル名");
-  if (!Array.isArray(value.cues) || !value.cues.length || value.cues.length > MAX_CUES_PER_SOURCE) throw new Error("比較元は1〜200,000件の字幕を含む必要があります。");
+  if (!Array.isArray(value.cues) || (!value.cues.length&&!value.editable) || value.cues.length > MAX_CUES_PER_SOURCE) throw new Error("比較元の字幕数を確認してください。");
   const cues = buildDocument(value.cues.map(cloneCue)).cues;
+  const anchors=dictionary<string>();
+  if(value.editable){if(!record(value.anchors)||Object.keys(value.anchors).length!==cues.length)throw Error("編集列の行対応が不正です。");const cueIds=new Set(cues.map(cue=>cue.id));for(const cue of cues){anchors[cue.id]=boundedText(value.anchors[cue.id],4096,"編集行ID");}if(Object.keys(value.anchors).some(id=>forbidden.has(id)||!cueIds.has(id)))throw Error("編集列に不明な字幕があります。");}
+  else if(value.anchors!==undefined)throw Error("元字幕に編集行対応は設定できません。");
   if (!Array.isArray(value.warnings) || value.warnings.length > 100 || value.warnings.some(warning => typeof warning !== "string" || warning.length > 4096)) throw new Error("比較元の読み込みメッセージが正しくありません。");
-  return { id, name, fileName, cues, warnings: [...value.warnings] as string[],...(value.generated?{generated:true}:{}) };
+  return { id, name, fileName, cues, warnings: [...value.warnings] as string[],...(value.generated?{generated:true}:{}),...(value.editable?{editable:true,anchors}:{}) };
 }
 function normalizeSources(values: unknown): ComparisonSource[] {
   if (!Array.isArray(values) || values.length < 1 || values.length > MAX_SOURCES) throw new Error("元字幕は最大3つ、整理案は1つまでです。");
   const sources = values.map(normalizeSource);
   if(sources.filter(s=>!s.generated).length>3||sources.filter(s=>s.generated).length>1)throw new Error("元字幕は最大3つ、整理案は1つまでです。");
   if (new Set(sources.map(source => source.id)).size !== sources.length) throw new Error("比較元のモデルIDが重複しています。");
+  if(!sources.some(source=>!source.generated))throw Error("元字幕を1つ以上残してください。");
   return sources;
 }
 
@@ -181,7 +188,7 @@ function bestAnchor(tree: IntervalNode | null, cue: Cue): Anchor | null {
  */
 export function buildComparisonRows(session: ComparisonSession): ComparisonRow[] {
   const reference = session.sources.find(source => source.id === session.referenceId);
-  if (!reference || session.sources.length < 1 || session.sources.length > MAX_SOURCES) throw new Error("比較の基準モデルが正しくありません。");
+  if (!reference || reference.editable || session.sources.length < 1 || session.sources.length > MAX_SOURCES) throw new Error("比較の基準モデルが正しくありません。");
   const anchors: Anchor[] = [];
   const makeAnchor = (source: ComparisonSource, cue: Cue, isReference: boolean): Anchor => {
     const candidates = dictionary<Cue[]>();
@@ -194,7 +201,7 @@ export function buildComparisonRows(session: ComparisonSession): ComparisonRow[]
   };
   reference.cues.forEach(cue => makeAnchor(reference, cue, true));
   for (const source of session.sources) {
-    if (source.id === reference.id) continue;
+    if (source.id === reference.id || source.editable) continue;
     // Anchors remain fixed throughout this source. Newly unmatched cues become
     // anchors for later sources, but never consume other cues of their own model.
     const tree = intervalTree(anchors);
@@ -205,6 +212,8 @@ export function buildComparisonRows(session: ComparisonSession): ComparisonRow[]
     }
   }
   const rows = anchors.sort((a, b) => a.row.start - b.row.start || a.row.end - b.row.end || a.ordinal - b.ordinal).map(anchor => anchor.row);
+  const byId=new Map(rows.map(row=>[row.id,row])),tree=intervalTree(anchors);
+  for(const source of session.sources.filter(source=>source.editable))for(const cue of source.cues){const row=byId.get(source.anchors?.[cue.id]??'')??bestAnchor(tree,cue)?.row;if(row)row.candidates[source.id].push(cue);}
   for (const row of rows) for (const candidates of Object.values(row.candidates)) candidates.sort((a, b) => a.start - b.start || a.end - b.end);
   rowOrigins.set(rows, { sources: session.sources, referenceId: session.referenceId });
   return rows;
@@ -221,8 +230,60 @@ export function getComparisonChoice(session: ComparisonSession, row: ComparisonR
 
 export function toggleComparisonText(session: ComparisonSession, row: ComparisonRow, sourceId: string, followSpeaker: boolean): ComparisonChoice {
   const current = getComparisonChoice(session, row);
-  const textSourceId = current.textSourceId === sourceId ? null : sourceId;
+  const textSourceId = current.textSourceId === sourceId || current.outputSourceId === sourceId ? null : sourceId;
   return { textSourceId, speaker: followSpeaker || textSourceId === null ? null : current.speaker };
+}
+
+function writeEditableRow(session:ComparisonSession,row:ComparisonRow,source:ComparisonSource,cues:Cue[]):ComparisonSession {
+  const oldIds=new Set((row.candidates[source.id]??[]).map(cue=>cue.id));
+  const anchors=Object.assign(dictionary<string>(),source.anchors);
+  oldIds.forEach(id=>delete anchors[id]);cues.forEach(cue=>anchors[cue.id]=row.id);
+  const updated={...source,cues:[...source.cues.filter(cue=>!oldIds.has(cue.id)),...cues],anchors};
+  const known=new Set(getComparisonSpeakers(updated)),aliases=dictionary<string>();
+  for(const [label,name] of Object.entries(session.speakerAliases[source.id]??{}))if(known.has(label))aliases[label]=name;
+  const choices={...session.choices};
+  for(const [id,choice] of Object.entries(choices)){const speaker=choice.speaker;if(speaker&&'sourceId' in speaker&&speaker.sourceId===source.id&&speaker.label&&!known.has(speaker.label))choices[id]={...choice,speaker:{custom:speaker.label}};}
+  return {...session,sources:session.sources.map(item=>item.id===source.id?updated:item),choices,speakerAliases:{...session.speakerAliases,[source.id]:aliases}};
+}
+
+/** One supplemental column. AI supplies its initial cues; originals stay immutable. */
+export function createEditableComparison(session:ComparisonSession,initial?:ComparisonSource):ComparisonSession {
+  const previous=session.sources.find(source=>source.generated);
+  if(previous?.id===session.referenceId)throw Error('元字幕を時間軸の基準にしてください。');
+  const base=previous?removeComparisonSource(session,previous.id):session;
+  const rows=buildComparisonRows(base),rowIds=new Set(rows.map(row=>row.id)),selected=initial?null:getSelectedCues(session);
+  const id=initial?.id??`custom-${crypto.randomUUID()}`,anchors=dictionary<string>();
+  const source:ComparisonSource={id,name:initial?.name??'カスタム',fileName:initial?.fileName??'カスタム.vtt',cues:[],warnings:initial?.warnings??[],generated:true,editable:true,anchors};
+  if(initial){
+    const aligned=buildComparisonRows({...base,sources:[...base.sources,{...initial,editable:undefined,anchors:undefined}]});
+    for(const row of aligned)for(const cue of row.candidates[id]??[]){source.cues.push({...cue});anchors[cue.id]=row.id;}
+  }else for(const cue of selected??[]){if(!rowIds.has(cue.comparisonRowId))continue;const copy=cloneCue({...cue,id:crypto.randomUUID()});source.cues.push(copy);anchors[copy.id]=cue.comparisonRowId;}
+  const next=addComparisonSources(base,[source]);
+  if(!initial)for(const row of buildComparisonRows(next)){const choice=getComparisonChoice(next,row);if(choice.textSourceId&&row.candidates[id]?.length)next.choices[row.id]={...choice,outputSourceId:id};}
+  return next;
+}
+
+export function adoptComparisonChoice(session:ComparisonSession,row:ComparisonRow,next:ComparisonChoice):ComparisonSession {
+  let result=session;
+  const editable=session.sources.find(source=>source.editable),chosen=session.sources.find(source=>source.id===next.textSourceId);
+  if(editable&&chosen&&!chosen.generated){
+    const cues=(row.candidates[chosen.id]??[]).map(cue=>({...cue,id:crypto.randomUUID()}));
+    result=writeEditableRow(session,row,editable,cues);next={...next,...(cues.length?{outputSourceId:editable.id}:{})};
+  }
+  if(next.textSourceId===null)next={textSourceId:null,speaker:null};
+  return {...result,choices:{...result.choices,[row.id]:next}};
+}
+
+export function editComparisonCue(session:ComparisonSession,row:ComparisonRow,sourceId:string,cueId:string|undefined,text:string):ComparisonSession {
+  if(text.length>2_000_000||/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(text))throw Error('字幕本文の長さ・制御文字を確認してください。');
+  const source=session.sources.find(source=>source.id===sourceId&&source.editable);if(!source)throw Error('編集するカスタム列がありません。');
+  const current=row.candidates[sourceId]??[],cue=cueId?current.find(cue=>cue.id===cueId):undefined;
+  if(cueId&&!cue)throw Error('編集する字幕が見つかりません。');
+  const fallback=current[0]??row.candidates[session.referenceId]?.[0];
+  const updated:Cue={...(cue??{id:crypto.randomUUID(),start:row.start,end:row.end,speaker:fallback?.speaker??null,sourceIds:[],sourceCount:1}),text,isMultiVoice:undefined,voicePayload:undefined};
+  const cues=cue?current.flatMap(item=>item.id===cue.id?(text.trim()?[updated]:[]):[item]):text.trim()?[updated]:[];
+  const result=writeEditableRow(session,row,source,cues),choice=getComparisonChoice(session,row);
+  return {...result,choices:{...result.choices,[row.id]:cues.length?{textSourceId:choice.textSourceId??source.id,outputSourceId:source.id,speaker:null}:{textSourceId:null,speaker:null}}};
 }
 
 /** Only explicit exclusions skip time; overlapping adopted speech stays audible. */
@@ -237,7 +298,7 @@ export function getComparisonSkippedRanges(session: ComparisonSession): { start:
     }
     return result;
   };
-  const kept=merge(rows.flatMap(row=>{const id=getComparisonChoice(session,row).textSourceId;return id?(row.candidates[id]??[]).map(c=>({start:c.start,end:c.end})):[];}));
+  const kept=merge(rows.flatMap(row=>{const choice=getComparisonChoice(session,row),id=choice.outputSourceId??choice.textSourceId;return id?(row.candidates[id]??[]).map(c=>({start:c.start,end:c.end})):[];}));
   const excluded=merge(rows.filter(row=>own(session.choices,row.id)&&session.choices[row.id].textSourceId===null).map(row=>({start:row.start,end:row.end})));
   const result: {start:number;end:number}[]=[];
   let index=0;
@@ -253,13 +314,14 @@ export function addComparisonSources(session: ComparisonSession, sources: readon
   return validateSession({ ...session, sources: [...session.sources, ...sources] });
 }
 export function setComparisonReference(session: ComparisonSession, referenceId: string): ComparisonSession {
-  if (!session.sources.some(source => source.id === referenceId)) throw new Error("基準にするモデルが見つかりません。");
+  if (!session.sources.some(source => source.id === referenceId&&!source.editable)) throw new Error("基準にする元字幕が見つかりません。");
   if (referenceId === session.referenceId) return session;
   return { ...session, referenceId, choices: dictionary() };
 }
 export function removeComparisonSource(session: ComparisonSession, sourceId: string): ComparisonSession {
   if (!session.sources.some(source => source.id === sourceId)) return session;
   if (session.sources.length === 1) throw new Error("比較には最低1つのVTTが必要です。");
+  if(session.sources.find(source=>source.id===sourceId&&!source.generated)&&session.sources.filter(source=>!source.generated).length===1)throw Error("元字幕を1つ以上残してください。");
   const sources = session.sources.filter(source => source.id !== sourceId);
   const speakerAliases = dictionary<Record<string, string>>();
   for (const source of sources) if (own(session.speakerAliases, source.id)) speakerAliases[source.id] = { ...session.speakerAliases[source.id] };
@@ -268,7 +330,7 @@ export function removeComparisonSource(session: ComparisonSession, sourceId: str
   const validRowIds = new Set(buildComparisonRows(next).map(row => row.id));
   for (const [id, choice] of Object.entries(session.choices)) {
     if (!validRowIds.has(id)) continue;
-    next.choices[id] = { textSourceId: choice.textSourceId === sourceId ? null : choice.textSourceId, speaker: choice.speaker && "sourceId" in choice.speaker && choice.speaker.sourceId === sourceId ? null : choice.speaker };
+    next.choices[id] = { textSourceId: choice.textSourceId === sourceId ? null : choice.textSourceId, speaker: choice.speaker && "sourceId" in choice.speaker && choice.speaker.sourceId === sourceId ? null : choice.speaker,...(choice.outputSourceId&&choice.outputSourceId!==sourceId&&choice.textSourceId!==sourceId?{outputSourceId:choice.outputSourceId}:{}) };
   }
   return next;
 }
@@ -289,8 +351,9 @@ function selectedItems(session: ComparisonSession, rows: readonly ComparisonRow[
   for (const row of rows) {
     const choice = getComparisonChoice(session, row);
     if (choice.textSourceId === null) continue;
-    const source = sourceById.get(choice.textSourceId);
-    const candidates = row.candidates[choice.textSourceId];
+    const effectiveSourceId=choice.outputSourceId??choice.textSourceId;
+    const source = sourceById.get(effectiveSourceId);
+    const candidates = row.candidates[effectiveSourceId];
     if (!source || !candidates?.length) throw new Error("採用する字幕が比較区間にありません。採用元を選び直してください。");
     selectedRowCount += 1;
     for (const original of candidates) {
@@ -406,10 +469,12 @@ function validateSession(value: unknown): ComparisonSession {
   for (const [id, rawChoice] of Object.entries(value.choices)) {
     const row = rows.get(id);
     if (forbidden.has(id) || !row || !record(rawChoice)) throw new Error("比較の採用設定に存在しない区間があります。");
-    keys(rawChoice, ["textSourceId", "speaker"], "採用設定");
+    keys(rawChoice, ["textSourceId", "speaker", "outputSourceId"], "採用設定");
     const textSourceId = rawChoice.textSourceId;
     if (textSourceId !== null && (typeof textSourceId !== "string" || !row.candidates[textSourceId]?.length)) throw new Error("比較区間に存在しない字幕が採用されています。");
-    session.choices[id] = { textSourceId: textSourceId as string | null, speaker: normalizeSpeaker(rawChoice.speaker, sourceSpeakers) };
+    const output=rawChoice.outputSourceId;
+    if(output!==undefined&&(typeof output!=="string"||textSourceId===null||!sources.some(source=>source.id===output&&source.editable)||!row.candidates[output]?.length))throw Error("採用する編集列が正しくありません。");
+    session.choices[id] = { textSourceId: textSourceId as string | null, speaker: normalizeSpeaker(rawChoice.speaker, sourceSpeakers),...(typeof output==='string'?{outputSourceId:output}:{}) };
   }
   return session;
 }
