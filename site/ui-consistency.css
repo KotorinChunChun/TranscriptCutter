@@ -94,3 +94,24 @@
 .comparison-media-drop-hint{min-width:0;flex:1 1 auto;padding:6px 10px;border:1px dashed #7ca99b;border-radius:5px;color:#315b4d;line-height:1.4;}
 .compact-ui #comparison-top-actions .comparison-main-actions{flex:1 1 auto;width:100%;}
 .compact-ui .comparison-main-actions>.button.primary{margin-left:auto;white-space:nowrap;}
+.workflow .workflow-terminology{margin-left:auto;}
+.workflow .workflow-help{margin-left:0;}
+.workflow .terms-short{display:none;}
+@media(max-width:540px){.workflow .terms-full{display:none;}.workflow .terms-short{display:inline;}}
+.vtt-comparison .comparison-workspace-heading{display:flex;align-items:center;flex:0 0 auto;width:100%;min-width:0;gap:8px;padding:3px 0;margin:0 0 6px;box-sizing:border-box;}
+.comparison-primary-actions{display:flex;align-items:center;justify-content:flex-end;flex:0 0 auto;gap:5px;margin-left:auto;}
+.comparison-primary-actions>.button{white-space:nowrap;}
+.vtt-comparison .comparison-media-drop-hint{flex:1 1 0;min-width:40px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.comparison-drop-content{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:16px;flex:1 1 auto;min-height:120px;max-width:100%;}
+.comparison-drop-content>span{max-width:100%;overflow-wrap:anywhere;line-height:1.7;}
+.comparison-empty-workspace .comparison-primary-actions>.button{min-height:36px;}
+.compact-ui .workspace-empty>.empty-sample{flex:0 0 auto;margin-top:16px;}
+.vtt-paste-input{display:block;box-sizing:border-box;width:100%;min-height:240px;max-height:55dvh;padding:10px;border:1px solid var(--tc-border);border-radius:5px;resize:vertical;font:inherit;line-height:1.5;}
+.comparison-add-menu{max-width:calc(100vw - 16px);box-sizing:border-box;}
+.comparison-add-menu>button:disabled{opacity:.45;cursor:default;}
+.comparison-add-menu>button:focus-visible{outline:2px solid #16856a;outline-offset:-2px;background:#e5f2eb;}
+@media(max-width:650px){
+ .vtt-comparison .comparison-workspace-heading{gap:5px;}
+ .vtt-comparison .comparison-workspace-heading:has(.comparison-transport){flex-wrap:wrap;}
+ .vtt-comparison .comparison-workspace-heading>.comparison-transport{flex-basis:100%;order:2;}
+}

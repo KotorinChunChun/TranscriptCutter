@@ -1,3 +1,5 @@
+import {SaveMenu} from '@/save-menu';
+import {AddMenu} from './add-menu';
 import {createPortal} from 'react-dom';
 import {comparisonDisplayTime} from '@/comparison-layout';
 import {confirmAction} from '@/browser';
@@ -21,6 +23,9 @@ import {buildTimedItemIndex,findActiveTimedItems} from "@/src/lib/transcript-pla
 
 interface VttComparisonProps {
   session: ComparisonSession | null;
+  active: boolean;
+  onSample: () => void;
+  canSample: boolean;
   onChange: (next: ComparisonSession) => void;
   onAddFiles: () => void;
   onGenerate: () => void;
@@ -199,7 +204,7 @@ function Candidate({ session, row, source, choice, onChoice, canPlay, onSeek, bu
   </div>;
 }
 
-export function VttComparison({ session, onChange, onAddFiles, onGenerate, onApply, onExportVtt, onSeek, canPlay, currentMs, durationMs, playing, onTogglePlayback, onScrub, busy }: VttComparisonProps) {
+export function VttComparison({ session, active, onSample, canSample, onChange, onAddFiles, onGenerate, onApply, onExportVtt, onSeek, canPlay, currentMs, durationMs, playing, onTogglePlayback, onScrub, busy }: VttComparisonProps) {
   const [query, setQuery] = useState("");
   const [simple,setSimple]=useState(()=>{try{return localStorage.getItem('tc-comparison-view')!=='detail';}catch{return true;}});
   const [expanded,setExpanded]=useState<Set<string>>(new Set());
@@ -208,9 +213,7 @@ export function VttComparison({ session, onChange, onAddFiles, onGenerate, onApp
   const [aliasesOpen, setAliasesOpen] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const [followPlayback,setFollowPlayback]=useState(true);
-  const [actionTarget,setActionTarget]=useState<HTMLElement|null>(null);
-  useEffect(()=>{setActionTarget(document.getElementById('comparison-top-actions'));},[]);
-  const [collapsed,setCollapsed]=useState<Set<string>>(new Set()),[addMenu,setAddMenu]=useState<{top:number;right:number}|null>(null),[editError,setEditError]=useState('');
+  const [collapsed,setCollapsed]=useState<Set<string>>(new Set()),[editError,setEditError]=useState('');
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const headingScrollRef = useRef<HTMLDivElement>(null);
   const timelineScrollRef = useRef<HTMLDivElement>(null);
@@ -268,7 +271,6 @@ export function VttComparison({ session, onChange, onAddFiles, onGenerate, onApp
     const node=frame?.querySelector<HTMLElement>('[data-comparison-row="'+CSS.escape(activeRow.id)+'"]');
     if(frame&&node){const box=node.getBoundingClientRect(),viewport=frame.getBoundingClientRect();if(box.top<viewport.top||box.bottom>viewport.bottom)frame.scrollTop+=box.top-viewport.top-Math.max(0,(frame.clientHeight-node.clientHeight)/2);}
   },[activeRow?.id,followPlayback,visibleCount,displayKey,rowIndices,speakerRuns,collapsed,filteredRows.length]);
-  useEffect(()=>{if(!addMenu)return;const close=(event:Event)=>{if(!(event.target instanceof Element)||!event.target.closest('.comparison-add-menu,.comparison-add-header'))setAddMenu(null);};window.addEventListener('click',close);return()=>window.removeEventListener('click',close);},[addMenu]);
   useEffect(() => {
     const node = loadMoreRef.current;
     if (!node || visibleCount >= filteredRows.length || typeof IntersectionObserver === "undefined") return;
@@ -325,7 +327,7 @@ export function VttComparison({ session, onChange, onAddFiles, onGenerate, onApp
     onChange({ ...session, speakerAliases: { ...session.speakerAliases, [sourceId]: aliases } });
   };
 
-  const addCustom=async()=>{if(!session)return;setAddMenu(null);if(session.sources.some(source=>source.editable))return;if(session.sources.some(source=>source.generated)&&!(await confirmAction('現在のカスタム列を採用結果から作り直します。必要な比較は先に保存してください。')))return;update(()=>createEditableComparison(session));};
+  const addCustom=async()=>{if(!session)return;if(session.sources.some(source=>source.editable))return;if(session.sources.some(source=>source.generated)&&!(await confirmAction('現在のカスタム列を採用結果から作り直します。必要な比較は先に保存してください。')))return;update(()=>createEditableComparison(session));};
   const draftCell=(source:ComparisonSource,row:ComparisonRow)=>{
     const cues=row.candidates[source.id]??[],choice=getComparisonChoice(session!,row),selected=choice.textSourceId===source.id||choice.outputSourceId===source.id;
     return <div className={'comparison-draft-cell'+(selected?' text-selected':'')} key={source.id}>
@@ -339,9 +341,18 @@ export function VttComparison({ session, onChange, onAddFiles, onGenerate, onApp
     <time title={formatTime(durationMs,true)}>{comparisonDisplayTime(durationMs)}</time>
     <label><input type="checkbox" checked={followPlayback} onChange={event=>setFollowPlayback(event.target.checked)}/>再生箇所を追う</label>
   </div>;
+  const addition=<AddMenu disabled={busy} label="比較列を追加" items={[
+    {label:'VTTを貼り付け',disabled:(sources?.filter(source=>!source.generated).length??0)>=3,run:onAddFiles},
+    {label:'カスタム',disabled:!session||session.sources.some(source=>source.editable),run:()=>void addCustom()},
+    {label:'AI生成',disabled:!session,run:onGenerate},
+  ]}/>;
+  const header=<div className="comparison-workspace-heading">
+    {!!sources?.length&&<div className="comparison-title"><span className="comparison-heading-icon"><Columns3 size={19}/></span><span className="comparison-source-count">{sources.filter(source=>!source.generated).length}字幕{sources.some(source=>source.generated)&&<>・カスタム1列</>}</span></div>}
+    {canPlay?transport:<span className="comparison-media-drop-hint" title="ここに動画(mp4)をドロップして読込">ここに動画(mp4)をドロップして読込</span>}
+    <div className="comparison-primary-actions"><SaveMenu stage={2} active={active} className="button primary small"/><button type="button" className="button primary small" disabled={busy||!summary?.cueCount} onClick={onApply}>会話編集に反映<ArrowRight size={14}/></button></div>
+  </div>;
   if (!session || !sources?.length || !summary) return <section className="vtt-comparison comparison-empty-workspace" aria-label="字幕比較">
-    {canPlay&&transport}
-    <span>ここに字幕(vtt)および元にした動画(mp4)をドロップ</span>
+    {header}<div className="comparison-drop-content"><span>ここに字幕(vtt)および元にした動画(mp4)をドロップ</span><div className="comparison-empty-actions">{canSample&&<button className="button secondary" disabled={busy} onClick={onSample}>サンプル</button>}{addition}</div></div>
   </section>;
 
   const warnings = [...new Set([...summary.warnings, ...sources.flatMap(source => source.warnings.map(warning => `${source.name}：${warning}`))])];
@@ -351,19 +362,7 @@ export function VttComparison({ session, onChange, onAddFiles, onGenerate, onApp
   const timelineStyle = { "--comparison-columns": sources.length } as CSSProperties;
 
   return <section className={`vtt-comparison comparison-layout-preview${simple?" comparison-simple":""}`} aria-label="字幕比較" style={timelineStyle}>
-    <div className="comparison-workspace-heading">
-      <div className="comparison-title"><span className="comparison-heading-icon"><Columns3 size={19}/></span><h2>字幕比較</h2><span className="comparison-source-count">{sources.filter(source=>!source.generated).length}字幕{sources.some(source=>source.generated)&&<>・カスタム1列</>}</span></div>
-      {canPlay?transport:<span className="comparison-media-drop-hint">ここに動画(mp4)をドロップして読込</span>}
-      {actionTarget?createPortal(<div className="comparison-main-actions">
-        <button type="button" className="button secondary small" disabled={busy || sources.filter(s=>!s.generated).length >= 3} onClick={onAddFiles} title={sources.filter(s=>!s.generated).length >= 3 ? "比較できるVTTは最大3つです" : "比較するVTTを追加"}><Plus size={14}/>VTTを追加</button>
-        <button type="button" className="button primary small" disabled={busy || !summary.cueCount} onClick={onApply}>会話編集に反映<ArrowRight size={14}/></button>
-      </div>,actionTarget):<div className="comparison-main-actions">
-        <button type="button" className="button secondary small" disabled={busy || sources.filter(s=>!s.generated).length >= 3} onClick={onAddFiles} title={sources.filter(s=>!s.generated).length >= 3 ? "比較できるVTTは最大3つです" : "比較するVTTを追加"}><Plus size={14}/>VTTを追加</button>
-        <button type="button" className="button primary small" disabled={busy || !summary.cueCount} onClick={onApply}>会話編集に反映<ArrowRight size={14}/></button>
-      </div>}
-    </div>
-
-    {sources.length === 1 && <div className="comparison-single-source"><Info size={15}/><span>VTTを追加すると、同じ時間軸で字幕と話者を比較できます。</span><button type="button" disabled={busy} onClick={onAddFiles}>ファイルを追加<Plus size={12}/></button></div>}
+    {header}
 
     <div className="comparison-tools"><div className="action-group" role="group" aria-label="比較の表示"><button className="button secondary small" aria-pressed={simple} onClick={()=>{setSimple(true);localStorage.setItem('tc-comparison-view','simple');}}>簡易</button><button className="button secondary small" aria-pressed={!simple} onClick={()=>{setSimple(false);localStorage.setItem('tc-comparison-view','detail');}}>詳細</button></div>
       <label className="comparison-search"><Search size={15}/><input type="search" placeholder="字幕・話者・時刻を検索" value={query} onChange={event => setQuery(event.target.value)} aria-label="比較中の字幕を検索"/>{query && <button type="button" aria-label="検索をクリア" onClick={() => setQuery("")}><X size={13}/></button>}</label>
@@ -399,7 +398,7 @@ export function VttComparison({ session, onChange, onAddFiles, onGenerate, onApp
             <div className="comparison-model-meta"><span>{source.cues.length.toLocaleString()}字幕</span>{source.id === session.referenceId && <span className="comparison-reference-badge">時間軸の基準</span>}</div>
             <button type="button" className="comparison-bulk-adopt" disabled={busy} aria-label={`${source.name}をすべて採用`} onClick={() => adoptAllText(source)}><CheckCheck size={13}/>すべて採用</button>
           </div>)}
-          <div className="comparison-add-header"><button className="comparison-plus" aria-label="比較列を追加" aria-expanded={!!addMenu} disabled={busy} onClick={event=>{const box=event.currentTarget.getBoundingClientRect();setAddMenu(old=>old?null:{top:box.bottom+4,right:Math.max(8,window.innerWidth-box.right)});}}>＋</button></div>
+          <div className="comparison-add-header">{addition}</div>
         </div>
       </div>
       <div className="comparison-timeline-scroll" ref={timelineScrollRef} onScroll={event => syncScroll(event, headingScrollRef.current)} onWheel={event=>{if(event.deltaY)setFollowPlayback(false);}} onKeyDown={event=>{if(['ArrowDown','ArrowUp','PageDown','PageUp','Home','End',' '].includes(event.key)&&event.target===event.currentTarget)setFollowPlayback(false);}} onPointerDown={event=>{if(event.target===event.currentTarget)setFollowPlayback(false);}} tabIndex={0} aria-label="字幕の比較タイムライン。横にスクロールできます。">
@@ -431,7 +430,6 @@ export function VttComparison({ session, onChange, onAddFiles, onGenerate, onApp
 
 
     <div className="comparison-bottom-bar"><div className="comparison-bottom-summary"><div className="comparison-bottom-summary-main"><span className="comparison-bottom-stat"><CheckCheck size={15}/><strong>{summary.cueCount.toLocaleString()}</strong> 字幕を採用</span>{summary.cueCount > 0 && <span className="comparison-end-time"><Scissors size={12}/>採用VTTの終了 <time>{comparisonDisplayTime(adoptedEnd)}</time></span>}</div>{summary.cueCount > 0 && <p className="comparison-bottom-note">会話編集に反映後も、字幕のない末尾は標準で保持します。</p>}<p className="comparison-bottom-note">検索・差分表示にかかわらず、採用した全区間を書き出します。</p></div><button type="button" className="comparison-text-button" disabled={busy || !hasSpeakerOverrides} onClick={resetSpeakers}><RotateCcw size={12}/>すべての話者を字幕に合わせる</button></div>
-    {addMenu&&createPortal(<div className="comparison-add-menu" role="menu" aria-label="追加する列" style={{top:addMenu.top,right:addMenu.right}}><button role="menuitem" disabled={busy||session.sources.some(source=>source.editable)} onClick={()=>void addCustom()}>カスタム</button><button role="menuitem" disabled={busy} onClick={()=>{setAddMenu(null);onGenerate();}}>AI生成</button></div>,document.body)}
     {editError&&<p role="alert" className="field-error">{editError}</p>}
     <div className="comparison-live-status" aria-live="polite" aria-atomic="true">{announcement}</div>
   </section>;

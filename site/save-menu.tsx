@@ -13,11 +13,12 @@ function collect(){
  const options:SaveOption[]=[];window.dispatchEvent(new CustomEvent(requestEvent,{detail:options}));
  return [...options,{id:'metrics',label:'処理計測記録（JSON）',description:'各工程の処理時間・取得できたメモリ情報',run:saveProcessingMetrics}];
 }
-export function SaveMenu({stage}:{stage:number}){
+export function SaveMenu({stage,active=true,className='workflow-save'}:{stage:number;active?:boolean;className?:string}){
  const [open,setOpen]=useState(false),[options,setOptions]=useState<SaveOption[]>([]);
+ const [position,setPosition]=useState({top:46,right:8});
  const trigger=useRef<HTMLButtonElement>(null),menu=useRef<HTMLDivElement>(null);
  const refresh=useCallback(()=>setOptions(collect()),[]);
- useEffect(()=>setOpen(false),[stage]);
+ useEffect(()=>setOpen(false),[stage,active]);
  useEffect(()=>{
   if(!open)return;
   const outside=(event:PointerEvent)=>{if(!menu.current?.contains(event.target as Node)&&!trigger.current?.contains(event.target as Node))setOpen(false);};
@@ -26,7 +27,8 @@ export function SaveMenu({stage}:{stage:number}){
   menu.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
   return()=>{window.removeEventListener('pointerdown',outside);window.removeEventListener('keydown',key,true);window.removeEventListener(changedEvent,refresh);};
  },[open,refresh]);
- return <><button ref={trigger} className="workflow-save" title="保存する内容を選択" aria-haspopup="menu" aria-expanded={open} aria-controls={open?'save-options':undefined} onClick={()=>{if(!open)refresh();setOpen(!open);}}>保存</button>{open&&createPortal(<div id="save-options" ref={menu} className="save-options" role="menu" aria-label="保存する内容" onKeyDown={event=>{
+ if(!active)return null;
+ return <><button ref={trigger} className={className} title="保存する内容を選択" aria-haspopup="menu" aria-expanded={open} aria-controls={open?'save-options':undefined} onClick={()=>{if(!open){refresh();const box=trigger.current!.getBoundingClientRect();setPosition({top:box.bottom+4,right:Math.max(8,innerWidth-box.right)});}setOpen(!open);}}>保存</button>{open&&createPortal(<div id="save-options" ref={menu} className="save-options" style={{...position,maxHeight:`calc(100dvh - ${position.top+8}px)`}} role="menu" aria-label="保存する内容" onKeyDown={event=>{
   if(!['ArrowDown','ArrowUp','Home','End','Tab'].includes(event.key))return;
   if(event.key==='Tab'){setOpen(false);return;}
   event.preventDefault();const buttons=Array.from(menu.current!.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')),index=buttons.indexOf(document.activeElement as HTMLButtonElement);
