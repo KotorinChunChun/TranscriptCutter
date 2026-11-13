@@ -40,3 +40,4 @@ html,body{height:100%;overflow:hidden}
 .browser-model-table button[aria-pressed=true]{background:#d4eadc;border-color:#6d9c83;color:#175d43}
 .browser-model-message{margin:6px 0 0;overflow-wrap:anywhere}
 .browser-model-message:empty{display:none}
+.browser-gpu-status{margin-left:auto;color:#426c58}

@@ -2,12 +2,19 @@ import {ALL_FORMATS,Input,BlobSource,AudioBufferSink} from 'mediabunny';
 import {browserWhisperModels,whisperCache,whisperRuntime,runtimeFiles,type BrowserWhisperModel} from './browser-whisper-config';
 import {measure} from './processing-metrics';
 import {isWhisperModelCacheUrl,removeWhisperModelCache} from './browser-whisper-cache';
+import {whisperDtype,whisperMarkerPath,whisperManifestMatches,type WhisperDevice,type WhisperGpuStatus} from './browser-whisper-device';
 type Progress={file?:string;status?:string;loaded?:number;total?:number;progress?:number};
 const abortError=()=>new DOMException('ブラウザー処理を中止しました。','AbortError');
-const marker=(model:BrowserWhisperModel)=>new URL(`/__tc-whisper/${model.id}/${model.revision}`,location.origin).href;
-export async function browserWhisperInstalled(model:BrowserWhisperModel){
+const marker=(model:BrowserWhisperModel,device?:WhisperDevice)=>new URL(whisperMarkerPath(model,device),location.origin).href;
+export async function browserWhisperInstalled(model:BrowserWhisperModel,device:WhisperDevice='wasm'){
  if(!globalThis.caches)return false;
- try{const cache=await caches.open(whisperCache),entry=await cache.match(marker(model));if(!entry)return false;const {files}=await entry.json();return Array.isArray(files)&&files.length>=runtimeFiles.length+2&&(await Promise.all(files.map((url:string)=>cache.match(url)))).every(Boolean);}catch{return false;}
+ try{const cache=await caches.open(whisperCache),entry=await cache.match(marker(model,device))??(device==='wasm'?await cache.match(marker(model)):undefined);if(!entry)return false;const value=await entry.json(),{files}=value;return whisperManifestMatches(value,device)&&Array.isArray(files)&&files.length>=runtimeFiles.length+2&&(await Promise.all(files.map((url:string)=>cache.match(url)))).every(Boolean);}catch{return false;}
+}
+export async function probeBrowserWhisperGPU():Promise<WhisperGpuStatus>{
+ if(typeof Worker==='undefined')return {available:false,reason:'このブラウザーではWorkerを利用できません。'};
+ return new Promise(resolve=>{let worker:Worker;const finish=(value:WhisperGpuStatus)=>{clearTimeout(timer);worker?.terminate();resolve(value);},timer=setTimeout(()=>finish({available:false,reason:'WebGPUの確認が完了しませんでした。'}),10000);
+  try{worker=new Worker(new URL('/browser-whisper-worker.js',location.origin),{type:'module'});worker.onmessage=event=>finish(event.data.result??{available:false,reason:'WebGPUを確認できませんでした。'});worker.onerror=()=>finish({available:false,reason:'WorkerでWebGPUを利用できません。'});worker.postMessage({id:0,action:'probe'});}catch{finish({available:false,reason:'WorkerでWebGPUを利用できません。'});}
+ });
 }
 export async function browserWhisperCached(model:BrowserWhisperModel){
  if(!globalThis.caches)return false;
@@ -23,9 +30,10 @@ export class BrowserWhisper {
  private call(action:string,value:Record<string,unknown>,progress?:(value:Progress)=>void,transfer:Transferable[]=[]){
   return new Promise<any>((resolve,reject)=>{const id=++this.sequence;this.pending.set(id,{resolve,reject,progress});this.worker!.postMessage({id,action,...value},transfer);});
  }
- async prepare(model:BrowserWhisperModel,install:boolean,signal:AbortSignal,onProgress:(value:Progress)=>void){
-  if(this.loadingModel===model.id&&this.worker)return;
-  this.stop();if(!install&&!await browserWhisperInstalled(model))throw Error('先にこのブラウザーへモデルを導入してください。');
+ async prepare(model:BrowserWhisperModel,install:boolean,signal:AbortSignal,onProgress:(value:Progress)=>void,device:WhisperDevice='wasm'){
+  const key=model.id+':'+device;
+  if(!install&&this.loadingModel===key&&this.worker)return;
+  this.stop();if(!install&&!await browserWhisperInstalled(model,device))throw Error('選択した処理方式のモデルを先に導入してください。');
   const cache=await caches.open(whisperCache),bodies:Blob[]=[];
   for(const file of runtimeFiles){
    if(signal.aborted)throw abortError();const url=whisperRuntime+file;let response=await cache.match(url);
@@ -42,9 +50,9 @@ export class BrowserWhisper {
   this.worker.onerror=()=>{const requests=[...this.pending.values()];this.pending.clear();this.stop();for(const request of requests)request.reject(Error('ブラウザーWhisperの実行環境を起動できません。'));};
   const cancel=()=>this.stop();signal.addEventListener('abort',cancel,{once:true});
   try{
-   await this.call('load',{model:model.id,runtime:this.urls[0],mjs:this.urls[1],wasm:this.urls[2],install},onProgress);
-   if(signal.aborted)throw abortError();this.loadingModel=model.id;
-   if(install){const keys=await cache.keys(),files=keys.map(request=>request.url).filter(url=>url.startsWith(whisperRuntime)||url.includes('/'+model.repo+'/'));await cache.put(marker(model),new Response(JSON.stringify({files}),{headers:{'Content-Type':'application/json'}}));}
+   await this.call('load',{model:model.id,runtime:this.urls[0],mjs:this.urls[1],wasm:this.urls[2],install,device},onProgress);
+   if(signal.aborted)throw abortError();this.loadingModel=key;
+   if(install){const keys=await cache.keys(),files=keys.map(request=>request.url).filter(url=>url.startsWith(whisperRuntime)||url.includes('/'+model.repo+'/'));await cache.put(marker(model,device),new Response(JSON.stringify({files,device,dtype:whisperDtype(device)}),{headers:{'Content-Type':'application/json'}}));}
   }catch(error){this.stop();throw error;}finally{signal.removeEventListener('abort',cancel);}
  }
  async recognize(audio:Float32Array,signal:AbortSignal){

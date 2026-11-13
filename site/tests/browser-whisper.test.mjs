@@ -4,13 +4,39 @@ import {whisperSegments,browserWhisperModels,whisperCache,runtimeFiles,whisperLo
 import {transcriptionName} from '../recognition-state.ts';
 import {supportedModel} from '../recognition-options.ts';
 import {isWhisperModelCacheUrl,removeWhisperModelCache} from '../browser-whisper-cache.ts';
+import {probeWhisperWebGPU,whisperDevices,resolveWhisperDevice,whisperDtype,whisperMarkerPath,whisperManifestMatches} from '../browser-whisper-device.ts';
+test('WebGPU probe rejects absent, unavailable, insecure and failed devices',async()=>{
+ assert.equal((await probeWhisperWebGPU(undefined,true)).available,false);
+ assert.equal((await probeWhisperWebGPU({requestAdapter:async()=>null},true)).available,false);
+ assert.equal((await probeWhisperWebGPU({requestAdapter:async()=>{throw Error('must not call');}},false)).available,false);
+ assert.equal((await probeWhisperWebGPU({requestAdapter:async()=>({isFallbackAdapter:true,requestDevice:async()=>{throw Error('software');}})},true)).available,false);
+ assert.equal((await probeWhisperWebGPU({requestAdapter:async()=>({requestDevice:async()=>{throw Error('device unavailable');}})},true)).available,false);
+ assert.deepEqual(whisperDevices({available:false,reason:''}),['wasm']);
+ assert.equal(resolveWhisperDevice('webgpu',{available:false,reason:''}),'wasm');
+});
+test('WebGPU probe dispatches work before offering GPU and releases its temporary device',async()=>{
+ let dispatched=0,destroyed=0;
+ const device={pushErrorScope(){},createShaderModule(){return {};},createComputePipeline(){return {};},createCommandEncoder(){return {beginComputePass(){return {setPipeline(){},dispatchWorkgroups(){dispatched++;},end(){}};},finish(){return {};}};},queue:{submit(){},async onSubmittedWorkDone(){}},async popErrorScope(){return null;},destroy(){destroyed++;}};
+ const value=await probeWhisperWebGPU({requestAdapter:async()=>({info:{description:'test GPU'},requestDevice:async()=>device})},true);
+ assert.equal(value.available,true);assert.equal(dispatched,1);assert.equal(destroyed,1);assert.deepEqual(whisperDevices(value),['wasm','webgpu']);
+ device.createComputePipeline=()=>{throw Error('shader failure');};
+ assert.equal((await probeWhisperWebGPU({requestAdapter:async()=>({requestDevice:async()=>device})},true)).available,false);assert.equal(destroyed,2);
+});
+test('Whisper CPU and GPU caches and dtypes stay separate while legacy CPU remains usable',()=>{
+ const model=browserWhisperModels[0];
+ assert.notEqual(whisperMarkerPath(model,'wasm'),whisperMarkerPath(model,'webgpu'));
+ assert.equal(whisperManifestMatches({},'wasm'),true);assert.equal(whisperManifestMatches({},'webgpu'),false);
+ assert.equal(whisperManifestMatches({device:'wasm',dtype:'q8'},'webgpu'),false);
+ assert.equal(whisperManifestMatches({device:'webgpu',dtype:whisperDtype('webgpu')},'webgpu'),true);
+ assert.equal(whisperManifestMatches({device:'webgpu',dtype:'q8'},'webgpu'),false);
+});
 test('browser model deletion removes only the chosen model while preserving runtime and other caches',async()=>{
  const [tiny,base]=browserWhisperModels,origin='http://fixture.test';
- const target=[`${origin}/__tc-whisper/tiny/${tiny.revision}`,`https://huggingface.co/${tiny.repo}/resolve/${tiny.revision}/onnx/encoder_model_quantized.onnx`,`https://huggingface.co/${tiny.repo}/resolve/old/config.json`];
+ const target=[`${origin}/__tc-whisper/tiny/${tiny.revision}`,`${origin}/__tc-whisper/tiny/${tiny.revision}/webgpu`,`https://huggingface.co/${tiny.repo}/resolve/${tiny.revision}/onnx/encoder_model_quantized.onnx`,`https://huggingface.co/${tiny.repo}/resolve/old/config.json`];
  const retained=[`${origin}/__tc-whisper/base/${base.revision}`,`https://huggingface.co/${base.repo}/resolve/${base.revision}/config.json`,'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/transformers.min.js',`${origin}/projects/recording.mp4`,`https://example.test/${tiny.repo}/model.onnx`];
  const rows=new Map([...target,...retained].map(url=>[url,new Request(url)]));
  const count=await removeWhisperModelCache({keys:async()=>[...rows.values()],delete:async request=>rows.delete(request.url)},tiny,origin);
- assert.equal(count,3);assert.deepEqual([...rows.keys()],retained);
+ assert.equal(count,4);assert.deepEqual([...rows.keys()],retained);
  assert.equal(await removeWhisperModelCache({keys:async()=>[...rows.values()],delete:async request=>rows.delete(request.url)},tiny,origin),0);
 });
 test('browser model cache matching rejects similar names and unrelated origins',()=>{
