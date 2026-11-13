@@ -22,3 +22,21 @@ html,body{height:100%;overflow:hidden}
 
 .setup-column{container-type:inline-size}@container(max-width:620px){.range-fields{grid-template-columns:auto minmax(0,1fr)}.range-fields label{white-space:nowrap}}.recognition .media-drop{display:block;width:100%;box-sizing:border-box;min-height:64px;padding:12px;border:2px dashed #7ca99b;background:#fff;color:#315b4d;text-align:center}.media-drop[aria-disabled=true]{opacity:.5}.subtitle-paste textarea{width:100%;box-sizing:border-box;min-height:140px}.subtitle-paste button{margin:4px 0}.sidebar-upload{box-sizing:border-box}
 .workflow .workflow-brand{background:transparent;border:0;border-radius:0;padding:0;font-weight:700;color:inherit}.workflow .workflow-brand:disabled{opacity:.5;cursor:default}.workflow .workflow-brand:focus-visible{outline:2px solid currentColor;outline-offset:4px}
+.workflow-pane:has(.recognition-source)>div:not([hidden]){flex:1;min-height:0;overflow:hidden}
+.setup-static-heading{display:flex;align-items:center;gap:10px;padding:8px 10px;background:#e5f2eb;color:#244f42}
+.execution-target-card .recognition-source{padding:8px 12px;border:0;background:#fff;gap:8px}
+.execution-target-card .recognition-source label{flex:1;min-width:0}
+.execution-target-card .recognition-source select{width:100%;font:inherit}
+.recognition .setup-static-heading .setup-number{font-weight:400}
+.browser-recognition .setup-column{max-width:1120px}
+.browser-model-table-wrap{overflow:auto}
+.browser-model-table{width:100%;border-collapse:collapse;font:inherit;min-width:750px}
+.browser-model-table th,.browser-model-table td{padding:7px 8px;vertical-align:middle;text-align:left;white-space:nowrap;border-bottom:1px solid #d7e3dc}
+.browser-model-table thead{background:#f4f8f5}
+.browser-model-table tbody th{font-weight:400}
+.browser-model-table tr[aria-selected=true]{background:#eaf5ee}
+.browser-model-state{display:block;color:#57796a;margin-top:3px}
+.browser-model-table button,.browser-model-table select{font:inherit;min-height:36px;padding:5px 9px}
+.browser-model-table button[aria-pressed=true]{background:#d4eadc;border-color:#6d9c83;color:#175d43}
+.browser-model-message{margin:6px 0 0;overflow-wrap:anywhere}
+.browser-model-message:empty{display:none}

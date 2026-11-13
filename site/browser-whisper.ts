@@ -1,12 +1,21 @@
 import {ALL_FORMATS,Input,BlobSource,AudioBufferSink} from 'mediabunny';
 import {browserWhisperModels,whisperCache,whisperRuntime,runtimeFiles,type BrowserWhisperModel} from './browser-whisper-config';
 import {measure} from './processing-metrics';
+import {isWhisperModelCacheUrl,removeWhisperModelCache} from './browser-whisper-cache';
 type Progress={file?:string;status?:string;loaded?:number;total?:number;progress?:number};
 const abortError=()=>new DOMException('ブラウザー処理を中止しました。','AbortError');
 const marker=(model:BrowserWhisperModel)=>new URL(`/__tc-whisper/${model.id}/${model.revision}`,location.origin).href;
 export async function browserWhisperInstalled(model:BrowserWhisperModel){
  if(!globalThis.caches)return false;
  try{const cache=await caches.open(whisperCache),entry=await cache.match(marker(model));if(!entry)return false;const {files}=await entry.json();return Array.isArray(files)&&files.length>=runtimeFiles.length+2&&(await Promise.all(files.map((url:string)=>cache.match(url)))).every(Boolean);}catch{return false;}
+}
+export async function browserWhisperCached(model:BrowserWhisperModel){
+ if(!globalThis.caches)return false;
+ try{return (await(await caches.open(whisperCache)).keys()).some(request=>isWhisperModelCacheUrl(request.url,model,location.origin));}catch{return false;}
+}
+export async function removeBrowserWhisper(model:BrowserWhisperModel){
+ if(!globalThis.caches)throw Error('このブラウザーではモデルを管理できません。');
+ return removeWhisperModelCache(await caches.open(whisperCache),model,location.origin);
 }
 export class BrowserWhisper {
  private worker:Worker|null=null;private urls:string[]=[];private sequence=0;private pending=new Map<number,{resolve:(value:any)=>void;reject:(error:unknown)=>void;progress?:(value:Progress)=>void}>();private loadingModel='';

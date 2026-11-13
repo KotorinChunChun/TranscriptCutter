@@ -1,10 +1,10 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {restoredWorkspace,useWorkspaceSave} from './workspace-storage';
 import type {RangeSelection} from './recognition-range';
-import {fileKey} from './browser';
+import {fileKey,confirmAction} from './browser';
 import {loadSpeechPreferences,saveSpeechPreferences} from './speech-preferences';
-import {BrowserWhisper,browserWhisperModels,browserWhisperInstalled,openWhisperAudio,whisperAudioChunk} from './browser-whisper';
-import {whisperSegments} from './browser-whisper-config';
+import {BrowserWhisper,browserWhisperModels,browserWhisperInstalled,browserWhisperCached,removeBrowserWhisper,openWhisperAudio,whisperAudioChunk} from './browser-whisper';
+import {whisperSegments,type BrowserWhisperModel} from './browser-whisper-config';
 import {finishEstimate} from './recognition-options';
 import {useRecognitionRange,RecognitionRangeControls} from './recognition-range-controls';
 import {MediaDrop} from './media-drop';
@@ -14,29 +14,34 @@ import {recognitionProgress,transcriptionName} from './recognition-state';
 import {segmentsToVtt} from './segments-vtt';
 import type {Job,Segment} from './speech-client';
 import type {RecognitionProps} from './recognition';
-export function BrowserRecognition({active,onTransfer,onActivity}:RecognitionProps){
+export function BrowserRecognition({active,onTransfer,onActivity,sourceControls}:RecognitionProps){
  const [restored]=useState(()=>restoredWorkspace<{range:RangeSelection;job:Job|null;segments:Segment[]}>('browser-recognition'));
  const engine=useRef(new BrowserWhisper()).current,controller=useRef<AbortController|null>(null),player=useRef<HTMLVideoElement>(null),sourceKey=useRef('');
  const [modelId,setModelId]=useState(()=>{const id=loadSpeechPreferences('http://browser-whisper.local/').modelId;return browserWhisperModels.some(m=>m.id===id)?id:'tiny';}),[installed,setInstalled]=useState<Record<string,boolean>>({}),[working,setWorking]=useState(false),[installing,setInstalling]=useState(false),[message,setMessage]=useState(''),[error,setError]=useState('');
+ const [cached,setCached]=useState<Record<string,boolean>>({}),[deleting,setDeleting]=useState(''),[operationModel,setOperationModel]=useState('');
  const [file,setFile]=useState<File|null>(restored?.file??null),[url,setUrl]=useState(()=>restored?.file?URL.createObjectURL(restored.file):''),[job,setJob]=useState<Job|null>(()=>restored?.data.job?{...restored.data.job,...(['running','queued'].includes(restored.data.job.status)?{status:'interrupted',phase:'interrupted'}:{})}:null),[segments,setSegments]=useState<Segment[]>(restored?.data.segments??[]),[now,setNow]=useState(Date.now());
  const range=useRecognitionRange(file,restored?.data.range);
  const snapshot=useMemo(()=>({range:range.value,job,segments}),[range.value,job,segments]);useWorkspaceSave('browser-recognition',snapshot,file);
  const rangeSeek=useMediaRangeSeek(file,player,range,working);
  const model=browserWhisperModels.find(m=>m.id===modelId)!,position=recognitionProgress(job),estimate=finishEstimate(job,now);
  const supported=typeof Worker!=='undefined'&&typeof WebAssembly!=='undefined'&&typeof OfflineAudioContext!=='undefined'&&!!globalThis.caches;
- const check=async()=>{const states=await Promise.all(browserWhisperModels.map(async m=>[m.id,await browserWhisperInstalled(m)] as const));setInstalled(Object.fromEntries(states));};
+ const check=async()=>{const states=await Promise.all(browserWhisperModels.map(async m=>({id:m.id,installed:await browserWhisperInstalled(m),cached:await browserWhisperCached(m)})));setInstalled(Object.fromEntries(states.map(m=>[m.id,m.installed])));setCached(Object.fromEntries(states.map(m=>[m.id,m.cached])));};
  useEffect(()=>{void check();return()=>{controller.current?.abort();engine.stop();};},[]);
  useEffect(()=>{if(!working)return;setNow(Date.now());const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer);},[working]);
- useEffect(()=>{onActivity?.({busy:working,label:working?installing?'ブラウザーWhisperを導入中':`ブラウザー認識 ${Math.round(position.fraction*100)}%・字幕${segments.length}件`:job?.status==='complete'?`ブラウザー認識完了・字幕${segments.length}件`:''});},[working,installing,position.fraction,segments.length,job?.status,onActivity]);
+ useEffect(()=>{onActivity?.({busy:working,label:working?deleting?'ブラウザーモデルを削除中':installing?'ブラウザーWhisperを導入中':`ブラウザー認識 ${Math.round(position.fraction*100)}%・字幕${segments.length}件`:job?.status==='complete'?`ブラウザー認識完了・字幕${segments.length}件`:''});},[working,installing,deleting,position.fraction,segments.length,job?.status,onActivity]);
  useEffect(()=>{if(!active)player.current?.pause();},[active]);
  useEffect(()=>()=>{if(url)URL.revokeObjectURL(url);},[url]);
  const progress=(p:{file?:string;loaded?:number;total?:number;status?:string})=>setMessage(`${p.file??'モデルを準備中'}${typeof p.loaded==='number'?` ${(p.loaded/1024**2).toFixed(1)}${p.total?' / '+(p.total/1024**2).toFixed(1):''} MB`:p.status==='done'?'・取得済み':''}`);
- const install=async()=>{
+ const install=async(model:BrowserWhisperModel)=>{
+  if(working)return;setOperationModel(model.id);
   setWorking(true);setInstalling(true);setError('');setMessage('実行環境を取得中');const abort=new AbortController();controller.current=abort;const finish=beginMetric('browser-whisper-install',{modelId:model.id,revision:model.revision});
-  try{await engine.prepare(model,true,abort.signal,progress);finish();await check();setMessage('導入済み・開始できます');}
-  catch(error){finish(abort.signal.aborted?'cancelled':'error');setError(abort.signal.aborted?'導入を中止しました。':String(error));}
-  finally{controller.current=null;setWorking(false);setInstalling(false);}
+  try{await engine.prepare(model,true,abort.signal,progress);finish();await check();setMessage(model.label+'を導入しました');}
+  catch(error){finish(abort.signal.aborted?'cancelled':'error');await check();setError(abort.signal.aborted?'導入を中止しました。':String(error));}
+  finally{controller.current=null;setWorking(false);setInstalling(false);setOperationModel('');}
  };
+ const selectModel=(id:string)=>{if(working)return;engine.stop();setModelId(id);saveSpeechPreferences('http://browser-whisper.local/',{modelId:id,mode:'none',devices:{}});setMessage('');};
+ const removeModel=async(model:BrowserWhisperModel)=>{if(working||!(await confirmAction(model.label+'をこのブラウザーから削除します。再利用には再導入が必要です。')))return;setWorking(true);setDeleting(model.id);setOperationModel(model.id);setError('');const finish=beginMetric('browser-whisper-delete',{modelId:model.id});try{engine.stop();await removeBrowserWhisper(model);await check();finish();setMessage(model.label+'を削除しました');}catch(error){finish('error');setError(String(error));}finally{setWorking(false);setDeleting('');setOperationModel('');}};
+ const speed=(id:string)=>{const seconds=Number(job?.metadata?.runSeconds),length=Number(job?.rangeEnd??0)-Number(job?.rangeStart??0);return job?.status==='complete'&&job.engine==='browser-whisper'&&job.modelId===id&&seconds>0&&length>0?(length/seconds).toFixed(1)+'倍速':'未測定';};
  const load=(selected:File)=>{if(working)return;if(!/\.(mp4|mov|mkv|webm|avi|m4v|wmv|mts|m2ts|wav|mp3|m4a|ogg|flac|aac)$/i.test(selected.name)){setError('動画・音声を選択してください。');return;}setFile(selected);setUrl(URL.createObjectURL(selected));setError('');if(sourceKey.current!==fileKey(selected)){setJob(null);setSegments([]);}};
  const recognize=async()=>{
   if(!file||working||!installed[model.id])return;let bounds;try{bounds=range.request();}catch(error){setError(String(error));return;}
@@ -60,11 +65,11 @@ export function BrowserRecognition({active,onTransfer,onActivity}:RecognitionPro
  };
  const outputName=(extension='vtt')=>transcriptionName(job!,file?.name??'transcript','',extension);
  const download=(record=false)=>{if(!job)return;const text=record?JSON.stringify({schemaVersion:2,job,segments,clientMeasurements:processingMetrics().filter(m=>m.details.jobId===job.id),memoryNote:'Optional JS heap snapshots, not process/GPU/peak memory.'},null,2):segmentsToVtt(segments),blob=new Blob([text],{type:record?'application/json':'text/vtt;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=outputName(record?'json':'vtt');a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);};
- return <section className="recognition guided-recognition browser-recognition"><header className="recognition-heading"><h1>ブラウザー内Whisper</h1><span>{working?'処理中':installed[modelId]?'導入済み':'未導入'}</span></header>
+ return <section className="recognition guided-recognition browser-recognition" aria-label="ブラウザー文字起こし">
  {!supported&&<p role="alert" className="error">このブラウザーでは必要な音声処理・キャッシュ機能を利用できません。</p>}{error&&<p role="alert" className="error">{error}</p>}
- <div className="panes"><section className="setup-column"><div className="setup-card setup-content"><h2>モデル</h2><div className="model-fields"><label>ブラウザーモデル<select aria-label="ブラウザー認識モデル" disabled={working} value={modelId} onChange={e=>{engine.stop();setModelId(e.target.value);saveSpeechPreferences('http://browser-whisper.local/',{modelId:e.target.value,mode:'none',devices:{}});setMessage('');}}>{browserWhisperModels.map(m=><option key={m.id} value={m.id}>{m.label}（{installed[m.id]?'導入済み':'未導入'}）</option>)}</select></label><span>処理方式：このブラウザーのCPU（WASM）</span><button className="primary-action" disabled={working||!supported} onClick={()=>void install()}>{installed[modelId]?'モデルを再点検・再導入':'このブラウザーへ導入'}</button></div><p role="status">{message}</p></div>
- <div className="setup-card setup-content"><MediaDrop disabled={working} onLoad={load} label="ブラウザー認識の動画ドロップ領域"/>
- <RecognitionRangeControls range={range} disabled={working||!file} prefix="ブラウザー認識" onSeek={rangeSeek.seek}/>
- <button className="primary-action start-recognition" disabled={working||!file||!installed[modelId]||!supported||!range.valid} onClick={()=>void recognize()}>ブラウザーで文字起こし開始</button></div>{url&&<video ref={player} controls src={url} preload="metadata" onLoadedMetadata={rangeSeek.loaded} onSeeked={rangeSeek.seeked}/>}
+ <div className="panes"><section className="setup-column">{sourceControls}
+ <section className="setup-card"><div className="setup-static-heading"><span className="setup-number">2</span><strong>モデル</strong></div><div className="setup-content"><div className="browser-model-table-wrap"><table className="browser-model-table" aria-label="ブラウザーモデル一覧"><thead><tr><th>モデル名</th><th>導入</th><th>削除</th><th>選択</th><th>速度</th><th>精度</th><th>CPU/GPU</th></tr></thead><tbody>{browserWhisperModels.map(m=><tr key={m.id} aria-selected={m.id===modelId}><th scope="row"><strong>{m.label}</strong><span className="browser-model-state">{working&&operationModel===m.id?deleting?'削除中':'導入中':installed[m.id]?'導入済み':cached[m.id]?'一部保存':installed[m.id]===false?'未導入':'確認中'}</span></th><td><button className="primary-action" aria-label={m.label+'を導入'} disabled={working||!supported||installed[m.id]} onClick={()=>void install(m)}>導入</button></td><td><button className="danger-action" aria-label={m.label+'を削除'} disabled={working||!cached[m.id]} onClick={()=>void removeModel(m)}>削除</button></td><td><button aria-label={m.label+'を選択'} aria-pressed={modelId===m.id} disabled={working||!supported} onClick={()=>selectModel(m.id)}>{modelId===m.id?'選択中':'選択'}</button></td><td title="同モデルの直近のブラウザー認識結果">{speed(m.id)}</td><td title="正解字幕による評価は未実施">未評価</td><td><select aria-label={m.label+'の処理方式'} disabled={working||!supported}><option value="wasm">CPU（WASM）</option></select></td></tr>)}</tbody></table></div><p role="status" className="browser-model-message">{message}</p></div></section>
+ <section className="setup-card"><div className="setup-static-heading"><span className="setup-number">3</span><strong>動画・音声</strong></div><div className="setup-content"><MediaDrop disabled={working} onLoad={load} label="ブラウザー認識の動画ドロップ領域" text="動画または音声ファイルをドロップ"/></div></section>
+ <section className="setup-card"><div className="setup-static-heading"><span className="setup-number">4</span><strong>文字起こし</strong></div><div className="setup-content"><RecognitionRangeControls range={range} disabled={working||!file} prefix="ブラウザー認識" onSeek={rangeSeek.seek}/><button className="primary-action start-recognition" disabled={working||!file||!installed[modelId]||!supported||!range.valid} onClick={()=>void recognize()}>ブラウザーで文字起こし開始</button></div></section>{url&&<video ref={player} controls src={url} preload="metadata" onLoadedMetadata={rangeSeek.loaded} onSeeked={rangeSeek.seeked}/>}
  </section><section className="recognition-output">{working&&<button className="cancel-action" onClick={()=>controller.current?.abort()}>{installing?'導入を中止':'認識中止'}</button>}{job&&<><section className="recognition-progress"><strong>{job.status==='complete'?'完了':job.status==='running'?'処理中':job.status==='cancelled'?'中止':job.status==='interrupted'?'中断':'エラー'}・{Math.round(position.fraction*100)}%</strong><progress aria-label="ブラウザー認識の進捗" max={1} value={position.fraction}/><p aria-label="ブラウザー認識の終了見込み">{estimate?`認識終了見込み（推定） ${new Date(estimate.finishAt).toLocaleTimeString('ja-JP')}・残り約${Math.ceil(estimate.remainingSeconds)}秒`:job.status==='running'?'終了見込み：進捗が得られるまで算出待ち':''}</p><p>確定字幕 {segments.length}件</p></section><div className="row"><button className="primary-action" disabled={working||job.status!=='complete'||!segments.length||!file||sourceKey.current!==fileKey(file)} onClick={()=>{if(file){player.current?.pause();onTransfer({media:file,vtt:segmentsToVtt(segments),name:outputName()});}}}>VTT編集</button><button disabled={!segments.length} onClick={()=>download()}>{job.status==='complete'?'VTTを保存':'部分VTTを保存'}</button><button onClick={()=>download(true)}>処理記録を保存</button></div><div className="results"><table><thead><tr><th>時刻</th><th>本文</th></tr></thead><tbody>{segments.map(s=><tr key={s.id}><td><button onClick={()=>{rangeSeek.preview(s.start);}}>{s.start.toFixed(3)}</button></td><td>{s.text}</td></tr>)}</tbody></table></div></>}</section></div></section>;
 }

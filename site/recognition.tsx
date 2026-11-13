@@ -19,20 +19,21 @@ import {ServerMeasurements} from './server-measurements';
 import {RecognitionHistory} from './recognition-history';
 import {deletableHistory,historyPageInfo} from './recognition-history-state';
 import {useMediaRangeSeek} from './use-media-range-seek';
-export type RecognitionProps={active:boolean;onTransfer:(value:{vtt:string;name:string;media:File})=>void;onActivity?:(value:{busy:boolean;label:string})=>void};
+export type RecognitionProps={active:boolean;onTransfer:(value:{vtt:string;name:string;media:File})=>void;onActivity?:(value:{busy:boolean;label:string})=>void;sourceControls?:ReactNode};
 export function Recognition(props:RecognitionProps){
  const [source,setSource]=useState(()=>restoredWorkspace<{source:string}>('recognition-source')?.data.source==='browser'?'browser':'server'),[serverActivity,setServerActivity]=useState({busy:false,label:''}),[browserActivity,setBrowserActivity]=useState({busy:false,label:''}),[historyHost,setHistoryHost]=useState<HTMLDivElement|null>(null);
  const sourceSnapshot=useMemo(()=>({source}),[source]);useWorkspaceSave('recognition-source',sourceSnapshot);
  const busy=serverActivity.busy||browserActivity.busy;
  useEffect(()=>{props.onActivity?.(source==='server'?serverActivity:browserActivity);},[source,serverActivity,browserActivity,props.onActivity]);
- return <><div className="recognition-source"><label>文字起こしの実行先 <select aria-label="文字起こしの実行先" disabled={busy} value={source} onChange={e=>setSource(e.target.value)}><option value="server">TranscriptionServer</option><option value="browser">このブラウザー（Whisper）</option></select></label><div className="history-toolbar" ref={setHistoryHost}/></div><div hidden={source!=='server'}><ServerRecognition {...props} active={props.active&&source==='server'} historyHost={historyHost} onActivity={setServerActivity}/></div><div hidden={source!=='browser'}><BrowserRecognition {...props} active={props.active&&source==='browser'} onActivity={setBrowserActivity}/></div></>;
+ const sourceControls=(forServer:boolean)=><section className="setup-card execution-target-card"><div className="setup-static-heading"><span className="setup-number">1</span><strong>文字起こしの実行先</strong></div><div className="setup-content recognition-source"><label><select aria-label="文字起こしの実行先" disabled={busy} value={source} onChange={e=>setSource(e.target.value)}><option value="server">TranscriptionServer</option><option value="browser">このブラウザー（Whisper）</option></select></label>{forServer&&<div className="history-toolbar" ref={setHistoryHost}/>}</div></section>;
+ return <><div hidden={source!=='server'}><ServerRecognition {...props} active={props.active&&source==='server'} sourceControls={sourceControls(true)} historyHost={historyHost} onActivity={setServerActivity}/></div><div hidden={source!=='browser'}><BrowserRecognition {...props} sourceControls={sourceControls(false)} active={props.active&&source==='browser'} onActivity={setBrowserActivity}/></div></>;
 }
 function SetupCard({number,title,summary,active,disabled,onOpen,children}:{number:SetupStep;title:string;summary:string;active:boolean;disabled:boolean;onOpen:()=>void;children:ReactNode}){
- return <section className="setup-card" data-current={active}><button className="setup-toggle" aria-expanded={active} aria-controls={`setup-${number}`} disabled={disabled} onClick={onOpen}><span className="setup-number">{number}</span><span className="setup-label"><strong>{title}</strong>{summary&&<span>{summary}</span>}</span><span aria-hidden="true">{active?'−':'＋'}</span></button><div className="setup-content" id={`setup-${number}`} hidden={!active}>{children}</div></section>;
+ return <section className="setup-card" data-current={active}><button className="setup-toggle" aria-expanded={active} aria-controls={`setup-${number}`} disabled={disabled} onClick={onOpen}><span className="setup-number">{number+1}</span><span className="setup-label"><strong>{title}</strong>{summary&&<span>{summary}</span>}</span><span aria-hidden="true">{active?'−':'＋'}</span></button><div className="setup-content" id={`setup-${number}`} hidden={!active}>{children}</div></section>;
 }
 const status:Record<string,string>={uploading:'送信中',queued:'待機中',running:'認識中',complete:'完了',error:'エラー',cancelled:'中止',interrupted:'中断'};
 const phases:Record<string,string>={uploading:'送信中',queued:'待機中',preparing:'音声・モデルを準備中',converting:'音声を変換中',loading:'モデルを準備中',loading_model:'モデルを準備中',downloading:'モデルを取得中',diarizing:'話者を識別中',transcribing:'字幕を認識中',complete:'完了',error:'エラー',cancelled:'中止',interrupted:'中断'};
-function ServerRecognition({active,onTransfer,onActivity,historyHost}:RecognitionProps&{historyHost:HTMLDivElement|null}){
+function ServerRecognition({active,onTransfer,onActivity,historyHost,sourceControls}:RecognitionProps&{historyHost:HTMLDivElement|null}){
  const [restored]=useState(()=>restoredWorkspace<{range:RangeSelection;step:SetupStep;job:Job|null;segments:Segment[];serverUrl:string}>('server-recognition'));
  const restoreJob=useRef(!!restored?.data.job),restoreSetup=useRef(!!restored);
  const client=useRef(new SpeechClient(speechSessionClientId())).current,reader=useRef(new RecognitionResults(client)).current;
@@ -93,7 +94,7 @@ function ServerRecognition({active,onTransfer,onActivity,historyHost}:Recognitio
  {historyHost&&createPortal(<button hidden={!active} disabled={!connectionCurrent} onClick={()=>{setHistoryOpen(true);setPendingDelete(null);void history();}}>履歴</button>,historyHost)}
  {historyOpen&&active&&<RecognitionHistory jobs={jobs} total={historyTotal} page={historyPage} hasNext={historyHasNext} loading={historyLoading} error={historyError} busy={busy} canDelete={canDeleteHistory} pendingDelete={pendingDelete} deleting={deleting} onClose={()=>{setHistoryOpen(false);setPendingDelete(null);}} onPage={page=>void history(page)} onSelect={selected=>void openHistoryJob(selected)} onDelete={selected=>{if(deletableHistory(selected,canDeleteHistory)){setHistoryError('');setPendingDelete(selected);}}} onCancelDelete={()=>{setPendingDelete(null);setHistoryError('');}} onConfirmDelete={()=>void deleteHistoryJob()}/>}
  {error&&<p role="alert" className="error">{error}</p>}
- <div className="panes"><section className="setup-column" aria-label="文字起こしの準備">
+ <div className="panes"><section className="setup-column" aria-label="文字起こしの準備">{sourceControls}
  <SetupCard number={1} title="サーバー接続" summary={connecting?'確認中':connectionCurrent?connectedUrl:connected?'変更未反映':'未接続'} active={currentStep===1} disabled={connecting} onOpen={()=>openStep(1)}>
   <div className="connection-settings"><input type="url" aria-label="文字起こしサーバーURL" value={serverUrl} disabled={busy||connecting} onChange={e=>{setServerUrl(e.target.value);setServerKey('');setKeyRequired(false);setAuthMode(null);}}/>
 
