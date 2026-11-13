@@ -7,7 +7,9 @@ import {pathToFileURL,fileURLToPath} from 'node:url';
 import {connectSpeech,serverUrl,ConnectionError,networkConnectionError} from './speech-connection.mjs';
 import {createCodexCleanup} from './codex-cleanup.mjs';
 const allowed=/^\/(?:api\/(?:health|jobs(?:\/[a-fA-F0-9]{32}(?:\/(?:segments|cancel|delete))?)?)|v1\/models)$/;
-export function createWebServer({directory=fileURLToPath(new URL('../dist-web/',import.meta.url)),assets,speechUrl='http://127.0.0.1:8769',speechToken='',launcherInfo,codexWorkDir,codexEnv,codexCleanup}={}){
+export const localPeer=address=>['127.0.0.1','::1','::ffff:127.0.0.1'].includes(address);
+export function lanPeer(address){const ip=String(address).replace(/^::ffff:/,'');return localPeer(ip)||/^10\./.test(ip)||/^192\.168\./.test(ip)||/^172\.(?:1[6-9]|2\d|3[01])\./.test(ip);}
+export function createWebServer({directory=fileURLToPath(new URL('../dist-web/',import.meta.url)),assets,speechUrl='http://127.0.0.1:8769',speechToken='',launcherInfo,codexWorkDir,codexEnv,codexCleanup,network,management=false}={}){
  const root=resolve(directory),initial=serverUrl(speechUrl),sessions=new Map();
  const ai=codexCleanup??createCodexCleanup({workDir:codexWorkDir??resolve(root,'../runtime/codex-work'),env:codexEnv??process.env});
  const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(value));};
@@ -24,9 +26,9 @@ export function createWebServer({directory=fileURLToPath(new URL('../dist-web/',
   if(!session.pending){const revision=session.revision;session.pending=connectSpeech(session.url,session.key).then(connection=>{if(revision!==session.revision)throw new ConnectionError('接続先が変更されました。再接続してください。',409);session.connection=connection;session.key='';return connection;}).finally(()=>{if(revision===session.revision)session.pending=null;});}
   return session.pending;
  };
- const server=createServer(async(req,res)=>{
-  const port=server.address()?.port;const hosts=[`127.0.0.1:${port}`,`localhost:${port}`];const host=req.headers.host??'';
-  if(!hosts.includes(host)||req.headers.origin&&req.headers.origin!==`http://${host}`){res.writeHead(403).end('接続元を確認してください。');return;}
+ const handler=async(req,res)=>{
+  const port=server.address()?.port,scheme=network?.tls?'https':'http';const hosts=[`127.0.0.1:${port}`,`localhost:${port}`,...(network?.hosts??[])];const host=req.headers.host??'';
+  if(!hosts.includes(host)||network?.lan&&!lanPeer(req.socket.remoteAddress)||req.headers.origin&&req.headers.origin!==`${scheme}://${host}`){res.writeHead(403).end('接続元を確認してください。');return;}
   const url=new URL(req.url,`http://${host}`);
   res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Cache-Control','no-store');
   if(url.pathname.startsWith('/ai/')){
@@ -44,11 +46,24 @@ export function createWebServer({directory=fileURLToPath(new URL('../dist-web/',
     json(res,404,{error:'整理操作が見つかりません。'});
    }catch(error){json(res,400,{error:String(error.message??error)});}return;
   }
-  if(url.pathname==='/launcher'&&launcherInfo&&req.method==='GET'){json(res,200,launcherInfo);return;}
+  if(url.pathname==='/launcher'&&launcherInfo&&req.method==='GET'){json(res,200,{...launcherInfo,setupUrl:localPeer(req.socket.remoteAddress)?launcherInfo.setupUrl:undefined});return;}
+  if(management&&(url.pathname==='/server/'||url.pathname.startsWith('/api/')||url.pathname.startsWith('/v1/')||/^\/(?:management(?:-model-(?:list|state))?\.(?:html|mjs|css)|model-guidance\.mjs|model-metadata\.json)$/.test(url.pathname))){
+   if(url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/updates')&&req.method!=='GET'){json(res,403,{error:'内包サーバーの更新・停止はTranscriptCutter本体から行います。'});return;}
+   const path=url.pathname==='/server/'?'/':url.pathname;
+   const headers={host:initial.host};for(const name of ['content-type','content-length','x-local-token','range'])if(req.headers[name])headers[name]=req.headers[name];
+   if(req.headers.origin)headers.origin=initial.origin;
+   const upstream=http.request(new URL(path+url.search,initial),{method:req.method,headers},reply=>{
+    if(reply.statusCode>=300&&reply.statusCode<400){reply.resume();json(res,502,{error:'管理画面の転送先を確認してください。'});return;}
+    const responseHeaders={};for(const name of ['content-type','content-length','content-range','accept-ranges'])if(reply.headers[name])responseHeaders[name]=reply.headers[name];
+    res.writeHead(reply.statusCode??502,responseHeaders);reply.pipe(res);
+   });
+   upstream.on('error',error=>{if(!res.headersSent)fail(res,networkConnectionError(error));else res.destroy();});
+   req.on('aborted',()=>upstream.destroy());res.on('close',()=>{if(!res.writableEnded)upstream.destroy();});req.pipe(upstream);return;
+  }
   if(url.pathname==='/connection'){
    try{
     const session=sessionFor(req);
-    if(req.method==='GET'){json(res,200,{url:session.url,authMode:session.connection?.health.authMode??null});return;}
+    if(req.method==='GET'){json(res,200,{url:session.url,authMode:session.connection?.health.authMode??null,managementUrl:management&&session.url===initial.href?'/server/':undefined});return;}
     if(req.method!=='POST'){res.writeHead(405).end();return;}
     if(!(req.headers['content-type']??'').startsWith('application/json'))throw new ConnectionError('接続設定の形式が不正です。',400);
     let text='';for await(const chunk of req){text+=chunk;if(text.length>16384)throw new ConnectionError('接続設定が大きすぎます。',413);}
@@ -85,7 +100,8 @@ export function createWebServer({directory=fileURLToPath(new URL('../dist-web/',
    res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self' blob: 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob: https://cdn.jsdelivr.net https://huggingface.co https://*.huggingface.co https://*.hf.co; worker-src 'self' blob:; object-src 'none'; frame-src 'none'; base-uri 'self'");
    res.writeHead(200,{'Content-Type':type});res.end(req.method==='HEAD'?undefined:body);
   }catch{res.writeHead(404).end('見つかりません。');}
- });
+ };
+ const server=network?.tls?https.createServer({...network.tls,minVersion:'TLSv1.2'},handler):createServer(handler);
  server.once('close',()=>ai.close());
  return server;
 }
