@@ -340,14 +340,8 @@ export function VttComparison({ session, onChange, onAddFiles, onGenerate, onApp
     <label><input type="checkbox" checked={followPlayback} onChange={event=>setFollowPlayback(event.target.checked)}/>再生箇所を追う</label>
   </div>;
   if (!session || !sources?.length || !summary) return <section className="vtt-comparison comparison-empty-workspace" aria-label="字幕比較">
-    {transport}<div className="comparison-empty-symbol"><Columns3 size={26}/></div>
-    <h2>字幕比較</h2>
-    <p>同じ動画から作ったVTTを、最大3つドロップ。<br/>時間軸をそろえて、採用する字幕と話者を選べます。</p>
-    <div className="comparison-empty-preview" aria-hidden="true">
-      {["モデル A", "モデル B", "モデル C"].map((name, index) => <div key={name} className={`comparison-preview-card model-${index}`}><span>{name}</span><i/><i/><i/><b><Check size={10}/>{index === 1 ? "話者" : "字幕"}</b></div>)}
-    </div>
-    <div className="comparison-empty-actions"><button type="button" className="button primary" disabled={busy} onClick={onAddFiles}><FolderOpen size={15}/>VTTを貼り付け</button></div>
-    <span className="comparison-empty-footnote">.vtt · 最大3ファイル · 元動画の時刻を使用</span>
+    {canPlay&&transport}
+    <span>ここに字幕(vtt)および元にした動画(mp4)をドロップ</span>
   </section>;
 
   const warnings = [...new Set([...summary.warnings, ...sources.flatMap(source => source.warnings.map(warning => `${source.name}：${warning}`))])];
@@ -359,7 +353,7 @@ export function VttComparison({ session, onChange, onAddFiles, onGenerate, onApp
   return <section className={`vtt-comparison comparison-layout-preview${simple?" comparison-simple":""}`} aria-label="字幕比較" style={timelineStyle}>
     <div className="comparison-workspace-heading">
       <div className="comparison-title"><span className="comparison-heading-icon"><Columns3 size={19}/></span><h2>字幕比較</h2><span className="comparison-source-count">{sources.filter(source=>!source.generated).length}字幕{sources.some(source=>source.generated)&&<>・カスタム1列</>}</span></div>
-      {transport}
+      {canPlay&&transport}
       {actionTarget?createPortal(<div className="comparison-main-actions">
         <button type="button" className="button secondary small" disabled={busy || sources.filter(s=>!s.generated).length >= 3} onClick={onAddFiles} title={sources.filter(s=>!s.generated).length >= 3 ? "比較できるVTTは最大3つです" : "比較するVTTを追加"}><Plus size={14}/>VTTを追加</button>
         <button type="button" className="button secondary small" disabled={busy} onClick={onExportVtt}><ArrowDownToLine size={14}/>採用VTTを保存</button>
