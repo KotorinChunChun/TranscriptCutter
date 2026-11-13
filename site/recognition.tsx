@@ -6,6 +6,11 @@ import {fileKey,confirmAction} from './browser';
 import {hashMedia,matchesSource,sourceIdentity} from './media-identity';
 import {loadSpeechPreferences,saveSpeechPreferences,processingChoice,speakerModes,modelsForSpeakerMode} from './speech-preferences';
 import {SpeechClient,needsBearerKey,canConfigureConnection,type Job,type Model,type Segment} from './speech-client';
+import {modelReferenceSpeed} from './model-reference-speed';
+function ModelReferenceSpeed({model}:{model:Model}){
+ const reference=modelReferenceSpeed(model);
+ return reference.details.length?<details className="model-reference-speed"><summary>{reference.summary}</summary>{reference.details.map((line,i)=><p key={i}>{line}</p>)}</details>:<p className="model-reference-speed" role="status">{reference.summary}</p>;
+}
 import {segmentsToVtt} from './segments-vtt';
 import {formatTime} from './src/lib/vtt';
 import {RecognitionResults,isActiveJob,recognitionProgress,recognitionElapsed,transcriptionName} from './recognition-state';
@@ -108,6 +113,7 @@ function ServerRecognition({active,onTransfer,onActivity,historyHost,sourceContr
   <label>文字起こしモデル <select aria-label="認識モデル" value={modelId} disabled={!choices.length||busy||speakerMode.startsWith('integrated:')} onChange={e=>chooseModel(e.target.value)}>{!models.length&&<option value="">未準備</option>}{choices.map(m=><option key={m.id} value={m.id}>{m.x_meeting.engineLabel} / {m.x_meeting.label}{m.x_meeting.integratedDiarization?'（話者識別内蔵）':''}{m.x_meeting.available===false||m.x_meeting.runtimeReady===false?'（準備が必要）':''}</option>)}</select></label>
   <label>処理方式 <select aria-label="処理方式" disabled={busy||!model} value={device} onChange={e=>chooseDevice(e.target.value)}>{(model?.x_meeting.processingMethods??[]).map(m=><option key={m.id} value={m.id}>{m.label}</option>)}</select></label>
   </div>
+  {model&&<ModelReferenceSpeed model={model}/>}
   <button className="next-step primary-action" disabled={!workflow.allowed[3]||busy} onClick={()=>openStep(3)}>次へ：動画・音声</button>
  </SetupCard>
  <SetupCard number={3} title="動画・音声" summary={file?.name??'未選択'} active={currentStep===3} disabled={busy||connecting||!workflow.allowed[3]&&!job} onOpen={()=>openStep(3)}>
