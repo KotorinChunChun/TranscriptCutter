@@ -26,6 +26,12 @@
 .comparison-simple-actions { display:flex;justify-content:flex-end;gap:8px;padding:1px 8px;border-bottom:1px solid #d3e0da; }
 .comparison-simple .comparison-model-header { padding:6px 10px; }
 .comparison-simple .comparison-axis-end { display:none; }
+.comparison-simple{--comparison-axis-width:146px;}
+.comparison-simple .comparison-alias-panel,.comparison-simple .comparison-timeline-caption { display:none; }
+.comparison-simple .comparison-text-only{display:block;position:relative;text-align:left;font:inherit;line-height:1.45;border:0;border-right:1px solid #d6e2da;border-bottom:1px solid #d6e2da;background:#fff;color:inherit;padding:10px 22px 10px 10px;width:100%;cursor:pointer;border-radius:0;min-height:52px;}
+.comparison-simple .comparison-text-only.text-selected{background:#e6f4eb;color:#245b41;}
+.comparison-simple-text{display:block;white-space:pre-wrap;overflow-wrap:anywhere;}
+.comparison-selected-mark{position:absolute;right:5px;top:2px;color:#16816b;font-weight:700;}
 
 .comparison-workspace-heading,
 .comparison-title,

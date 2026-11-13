@@ -1,0 +1,39 @@
+import {useEffect,useRef,useState} from 'react';
+import {Modal} from './editor-ui';
+import {cleanByRules,cleanupRequest} from '../src/lib/subtitle-cleanup';
+import type {ComparisonSource} from '../src/lib/comparison';
+import {useTermRules} from '../terminology-store';
+import {speechSessionClientId} from '../workspace-storage';
+type Model={id:string;name:string;isDefault:boolean};
+type Job={id:string;status:string;done:number;total:number;message:string;error?:string;result?:{cues:ComparisonSource['cues'];model:string|null}};
+const pendingKey='tc-cleanup-pending';
+async function signature(sources:ComparisonSource[]){const bytes=new TextEncoder().encode(JSON.stringify(sources.map(s=>[s.name,s.cues.map(c=>[c.start,c.end,c.text,c.speaker])])));return [...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(v=>v.toString(16).padStart(2,'0')).join('');}
+export function SubtitleCleanupDialog({sources,onGenerated,onClose,onBusy}:{sources:ComparisonSource[];onGenerated:(source:ComparisonSource)=>void;onClose:()=>void;onBusy?:(busy:boolean)=>void}){
+ const rules=useTermRules(),[method,setMethod]=useState<'codex'|'rules'>('codex'),[error,setError]=useState(''),[fillers,setFillers]=useState('えっと、えーと、えーっと、えー、あの、まあ'),[removeFillers,setRemoveFillers]=useState(true),[base,setBase]=useState(sources[0]?.id??''),[selected,setSelected]=useState(()=>new Set(sources.map(s=>s.id)));
+ const [models,setModels]=useState<Model[]>([]),[model,setModel]=useState(''),[connecting,setConnecting]=useState(false),[connectionError,setConnectionError]=useState(''),[busy,setBusy]=useState(false),[job,setJob]=useState<Job|null>(null),[ready,setReady]=useState<ComparisonSource|null>(null);
+ const alive=useRef(true),timer=useRef<ReturnType<typeof setTimeout>|null>(null),jobId=useRef(''),cancelRequested=useRef(false),client=useRef(speechSessionClientId()).current;
+ const api=async(path:string,body?:unknown)=>{const response=await fetch('/ai'+path,{headers:{'X-TC-Client':client,...(body===undefined?{}:{'Content-Type':'application/json'})},...(body===undefined?{}:{method:'POST',body:JSON.stringify(body)})});const value=await response.json();if(!response.ok)throw Error(value.error??'AI整理へ接続できません。');return value;};
+ const connect=async()=>{setConnecting(true);setConnectionError('');try{const value=await api('/status');if(alive.current){setModels(value.models);setModel(old=>value.models.some((m:Model)=>m.id===old)?old:value.models.find((m:Model)=>m.isDefault)?.id??value.models[0]?.id??'');}}catch(e){if(alive.current)setConnectionError(String(e));}finally{if(alive.current)setConnecting(false);}};
+ const add=(source:ComparisonSource)=>{setReady(source);setBusy(false);try{onGenerated(source);sessionStorage.removeItem(pendingKey);}catch(e){setError(String(e));}};
+ const poll=async(id:string)=>{try{const value:Job=await api(`/jobs/${id}`);if(!alive.current)return;setJob(value);
+  if(value.status==='complete'&&value.result){add({id:`cleanup-${crypto.randomUUID()}`,name:`AI整理案 ${value.result.model??'Codex'}`,fileName:'AI整理案.vtt',cues:value.result.cues,warnings:['Codex app serverの整理案。時刻と話者は元字幕を保持しています。'],generated:true});return;}
+  if(value.status==='error'||value.status==='cancelled'){setBusy(false);sessionStorage.removeItem(pendingKey);if(value.error)setError(value.error);return;}
+  timer.current=setTimeout(()=>void poll(id),1000);
+ }catch(e){if(alive.current){setBusy(false);setError(String(e));}}};
+ useEffect(()=>{alive.current=true;void connect();void(async()=>{try{const pending=JSON.parse(sessionStorage.getItem(pendingKey)??'null');if(pending&&pending.signature===await signature(sources)&&alive.current){jobId.current=pending.id;setBusy(true);void poll(pending.id);}}catch{/* A stale request cannot replace the current project. */}})();return()=>{alive.current=false;if(timer.current)clearTimeout(timer.current);};},[]);
+ useEffect(()=>{onBusy?.(busy);return()=>onBusy?.(false);},[busy,onBusy]);
+ const terms=()=>removeFillers?fillers.split(/[、,\n]/).map(s=>s.trim()).filter(Boolean):[];
+ const generate=async()=>{setError('');setReady(null);
+  if(method==='rules'){try{const source=sources.find(s=>s.id===base);if(!source)throw Error('元字幕を選んでください。');const result=cleanByRules(source.cues,rules,terms());if(!result.cues.length)throw Error('整理後の字幕が空です。');add({id:`cleanup-${crypto.randomUUID()}`,name:'ルール整理案',fileName:'ルール整理案.vtt',cues:result.cues,warnings:[`ルール整理 ${result.changes}箇所。元の時刻を保持。`],generated:true});}catch(e){setError(String(e));}return;}
+  const inputs=sources.filter(s=>selected.has(s.id));if(!inputs.length){setError('元字幕を1つ以上選んでください。');return;}cancelRequested.current=false;jobId.current='';setBusy(true);setJob(null);
+  try{const stamp=await signature(sources),value:Job=await api('/jobs',cleanupRequest(inputs,rules,model,terms(),removeFillers));jobId.current=value.id;sessionStorage.setItem(pendingKey,JSON.stringify({id:value.id,signature:stamp}));if(cancelRequested.current)await api(`/jobs/${value.id}/cancel`,{});if(alive.current){setJob(value);void poll(value.id);}}catch(e){if(alive.current){setError(String(e));setBusy(false);}}
+ };
+ const cancel=async()=>{cancelRequested.current=true;if(jobId.current)try{await api(`/jobs/${jobId.current}/cancel`,{});}catch(e){setError(String(e));}};
+ return <Modal title="字幕を整える" wide onClose={()=>{if(!busy)onClose();}} footer={<><button className="button secondary" disabled={busy} onClick={onClose}>閉じる</button>{busy?<button className="button danger" onClick={()=>void cancel()}>整理を中止</button>:<><button className="button primary" disabled={method==='codex'&&(!model||connecting)} onClick={()=>void generate()}>整理して比較に追加</button>{ready&&<button className="button secondary" onClick={()=>add(ready)}>作成した案を追加</button>}</>}</>}>
+ <div className="term-form"><label>方式<select className="select-input" aria-label="字幕整理方式" disabled={busy} value={method} onChange={e=>{setMethod(e.target.value as 'rules'|'codex');setError('');}}><option value="codex">AI最適選択・置換（Codex）</option><option value="rules">ルール置換</option></select></label>{method==='codex'?<label>AIモデル<select className="select-input" aria-label="字幕整理AIモデル" disabled={busy||connecting} value={model} onChange={e=>setModel(e.target.value)}>{!models.length&&<option value="">{connecting?'接続中':'未接続'}</option>}{models.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label>:<label>元字幕<select className="select-input" aria-label="整理する元字幕" disabled={busy} value={base} onChange={e=>setBase(e.target.value)}>{sources.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label>}</div>
+ {method==='codex'&&<><div className="cleanup-sources">{sources.map(s=><label key={s.id}><input type="checkbox" disabled={busy} checked={selected.has(s.id)} onChange={e=>setSelected(old=>{const next=new Set(old);if(e.target.checked)next.add(s.id);else next.delete(s.id);return next;})}/>{s.name}</label>)}</div><button className="button secondary small" disabled={busy||connecting} onClick={()=>void connect()}>Codex接続を確認</button></>}
+ <div className="panel-actions"><label><input type="checkbox" disabled={busy} checked={removeFillers} onChange={e=>setRemoveFillers(e.target.checked)}/>フィラーを削除</label><span>用語辞書 {rules.filter(r=>r.enabled&&(method==='codex'?r.ai:r.logic)).length}件</span></div><input className="select-input" aria-label="整理時に削除するフィラー" value={fillers} disabled={busy||!removeFillers} onChange={e=>setFillers(e.target.value)}/>
+ {job&&<div className="cleanup-progress" role="status"><strong>{job.message}</strong><progress aria-label="字幕整理の進捗" max={job.total||1} value={job.done}/><span>{job.done} / {job.total}区間</span>{!busy&&job.status==='running'&&<button className="button secondary" onClick={()=>{setBusy(true);void poll(job.id);}}>進捗を再取得</button>}</div>}
+ {(error||(method==='codex'&&connectionError))&&<p role="alert" className="field-error">{error||connectionError}</p>}
+ </Modal>;
+}

@@ -5,9 +5,11 @@ import {readFile,stat} from 'node:fs/promises';
 import {resolve,extname,sep} from 'node:path';
 import {pathToFileURL,fileURLToPath} from 'node:url';
 import {connectSpeech,serverUrl,ConnectionError,networkConnectionError} from './speech-connection.mjs';
+import {createCodexCleanup} from './codex-cleanup.mjs';
 const allowed=/^\/(?:api\/(?:health|jobs(?:\/[a-fA-F0-9]{32}(?:\/(?:segments|cancel|delete))?)?)|v1\/models)$/;
-export function createWebServer({directory=fileURLToPath(new URL('../dist-web/',import.meta.url)),assets,speechUrl='http://127.0.0.1:8769',speechToken='',launcherInfo}={}){
+export function createWebServer({directory=fileURLToPath(new URL('../dist-web/',import.meta.url)),assets,speechUrl='http://127.0.0.1:8769',speechToken='',launcherInfo,codexWorkDir,codexEnv,codexCleanup}={}){
  const root=resolve(directory),initial=serverUrl(speechUrl),sessions=new Map();
+ const ai=codexCleanup??createCodexCleanup({workDir:codexWorkDir??resolve(root,'../runtime/codex-work'),env:codexEnv??process.env});
  const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(value));};
  const fail=(res,error)=>json(res,error instanceof ConnectionError?error.status:502,{error:error instanceof ConnectionError?error.message:'接続操作に失敗しました。',code:error instanceof ConnectionError?error.code:'connection_failed'});
  const sessionFor=req=>{
@@ -27,6 +29,21 @@ export function createWebServer({directory=fileURLToPath(new URL('../dist-web/',
   if(!hosts.includes(host)||req.headers.origin&&req.headers.origin!==`http://${host}`){res.writeHead(403).end('接続元を確認してください。');return;}
   const url=new URL(req.url,`http://${host}`);
   res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Cache-Control','no-store');
+  if(url.pathname.startsWith('/ai/')){
+   try{
+    const owner=req.headers['x-tc-client'];if(typeof owner!=='string'||!/^[a-f0-9-]{36}$/i.test(owner))throw Error('整理セッションを確認してください。');
+    if(url.pathname==='/ai/status'&&req.method==='GET'){json(res,200,await ai.status());return;}
+    if(req.method==='POST'&&!(req.headers['content-type']??'').startsWith('application/json'))throw Error('JSON形式で送信してください。');
+    if(url.pathname==='/ai/jobs'&&req.method==='POST'){
+     req.setEncoding('utf8');let body='',bytes=0;for await(const chunk of req){bytes+=Buffer.byteLength(chunk);if(bytes>8*1024*1024)throw Error('字幕が大きすぎます。');body+=chunk;}
+     json(res,202,ai.start(owner,JSON.parse(body)));return;
+    }
+    const match=/^\/ai\/jobs\/([a-f0-9-]{36})(\/cancel)?$/.exec(url.pathname);
+    if(match&&req.method==='GET'&&!match[2]){json(res,200,ai.get(match[1],owner));return;}
+    if(match&&req.method==='POST'&&match[2]){req.resume();json(res,200,ai.cancel(match[1],owner));return;}
+    json(res,404,{error:'整理操作が見つかりません。'});
+   }catch(error){json(res,400,{error:String(error.message??error)});}return;
+  }
   if(url.pathname==='/launcher'&&launcherInfo&&req.method==='GET'){json(res,200,launcherInfo);return;}
   if(url.pathname==='/connection'){
    try{
@@ -69,6 +86,7 @@ export function createWebServer({directory=fileURLToPath(new URL('../dist-web/',
    res.writeHead(200,{'Content-Type':type});res.end(req.method==='HEAD'?undefined:body);
   }catch{res.writeHead(404).end('見つかりません。');}
  });
+ server.once('close',()=>ai.close());
  return server;
 }
 async function main(){

@@ -1,6 +1,11 @@
 import {buildDocument,findFillers} from './editor';
 import type {Cue} from './vtt';
 import {replaceTerms,type TermRule} from './terminology';
+import {buildComparisonRows,createComparisonSession,type ComparisonSource} from './comparison';
+export function cleanupRequest(sources:ComparisonSource[],rules:TermRule[],model:string,fillers:string[],removeFillers:boolean){
+ const session=createComparisonSession(sources);
+ return {model,rules,fillers,removeFillers,rows:buildComparisonRows(session).map(row=>({id:row.id,candidates:sources.map(source=>({sourceId:source.id,name:source.name,cues:row.candidates[source.id]??[]})).filter(source=>source.cues.length)}))};
+}
 export function cleanByRules(cues:readonly Cue[],rules:readonly TermRule[],fillers:string[]){
  const doc=buildDocument(cues),found=fillers.length?findFillers(doc,fillers):[];
  let changes=0;const result:Cue[]=[];

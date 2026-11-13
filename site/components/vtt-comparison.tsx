@@ -135,9 +135,9 @@ function SpeakerResult({ session, row, choice }: { session: ComparisonSession; r
   return <><strong>{labels.join(" / ")}</strong><span className="comparison-result-origin">字幕と同じ</span></>;
 }
 
-function Candidate({ session, row, source, choice, onChoice, canPlay, onSeek, busy }: {
+function Candidate({ session, row, source, choice, onChoice, canPlay, onSeek, busy, simple=false }: {
   session: ComparisonSession; row: ComparisonRow; source: ComparisonSource; choice: ComparisonChoice;
-  onChoice: (next: ComparisonChoice) => void; canPlay: boolean; onSeek: (ms: number) => void; busy: boolean;
+  onChoice: (next: ComparisonChoice) => void; canPlay: boolean; onSeek: (ms: number) => void; busy: boolean; simple?:boolean;
 }) {
   const cues = row.candidates[source.id] || EMPTY_CUES;
   const textSelected = choice.textSourceId === source.id;
@@ -146,6 +146,8 @@ function Candidate({ session, row, source, choice, onChoice, canPlay, onSeek, bu
     return cues.some(cue => cue.speaker === null && !cue.isMultiVoice) ? [...known, null] : known;
   }, [source, cues]);
   const speakerSelected = choice.speaker !== null && "sourceId" in choice.speaker && choice.speaker.sourceId === source.id;
+
+  if(simple)return <button type="button" className={`comparison-candidate comparison-text-only${textSelected?' text-selected':''}${!cues.length?' no-candidate':''}`} data-source-id={source.id} aria-pressed={textSelected} aria-label={`${formatTime(row.start,true)} ${source.name}の字幕を採用`} disabled={busy||!cues.length} onClick={()=>onChoice({...choice,textSourceId:source.id})}>{textSelected&&<span className="comparison-selected-mark" aria-hidden="true">✓</span>}{cues.length?cues.map(cue=><span className="comparison-simple-text" key={cue.id}>{cue.text}</span>):<span>—</span>}</button>;
 
   return <div className={`comparison-candidate${textSelected ? " text-selected" : ""}${speakerSelected ? " speaker-selected" : ""}${!cues.length ? " no-candidate" : ""}`}
     data-source-id={source.id} data-text-selected={textSelected || undefined}>
@@ -365,7 +367,7 @@ export function VttComparison({ session, onChange, onAddFiles, onApply, onExport
             return <section className={`comparison-row${expanded.has(row.id)?" row-details":""}${!choice.textSourceId ? " row-skipped" : ""}`} key={row.id} data-comparison-row={row.id} aria-label={`${rowTime}からの比較区間`}>
               <div className="comparison-grid">
                 <div className="comparison-time-axis"><button type="button" onClick={() => onSeek(row.start)} disabled={!canPlay || busy} aria-label={`元動画の${rowTime}から再生`}><time>{rowTime}</time><span className="comparison-axis-end">{formatTime(row.end, true)}</span>{canPlay && <span className="comparison-axis-play"><Play size={10}/>再生</span>}</button>{!row.referenceCueId && <span className="comparison-extra-row">基準外の字幕</span>}</div>
-                {sources.map(source => <Candidate key={source.id} session={session} row={row} source={source} choice={choice} onChoice={next => choose(row, next)} canPlay={canPlay} onSeek={onSeek} busy={busy}/>)}
+                {sources.map(source => <Candidate key={source.id} session={session} row={row} source={source} choice={choice} onChoice={next => choose(row, next)} canPlay={canPlay} onSeek={onSeek} busy={busy} simple={simple&&!expanded.has(row.id)}/>)}
               </div>
               {simple&&<div className="comparison-simple-actions"><button className="comparison-text-button" aria-expanded={expanded.has(row.id)} onClick={()=>setExpanded(old=>{const next=new Set(old);if(next.has(row.id))next.delete(row.id);else next.add(row.id);return next;})}>{expanded.has(row.id)?'閉じる':'詳細'}</button><button className="comparison-text-button" disabled={busy||!choice.textSourceId} onClick={()=>choose(row,{...choice,textSourceId:null})}>採用しない</button></div>}<div className="comparison-result-bar">
                 <span className={`comparison-result-state${choice.textSourceId ? " adopted" : ""}`}>{choice.textSourceId ? <Check size={13}/> : <span className="comparison-skip-dot"/>}{choice.textSourceId ? "採用" : "未採用"}</span>

@@ -24,7 +24,7 @@ export async function startStandalone({assets,directory=dirname(process.execPath
   if(!env.TC_TRANSCRIPTION_URL)owned=await startSupervisedServer({directory,stateDir,registry,preferred:saved.serverPort});
  }
  const launcherInfo=claim?.identity?{product:'TranscriptCutter',version,instanceId:bundle.instanceId,launcherId:claim.identity.nonce}:undefined;
- server=createWebServer({directory,assets,speechUrl:env.TC_TRANSCRIPTION_URL||owned?.url||'http://127.0.0.1:8769',speechToken:env.TC_TRANSCRIPTION_TOKEN||'',launcherInfo});
+ server=createWebServer({directory,assets,speechUrl:env.TC_TRANSCRIPTION_URL||owned?.url||'http://127.0.0.1:8769',speechToken:env.TC_TRANSCRIPTION_TOKEN||'',launcherInfo,codexWorkDir:stateDir?join(stateDir,'codex-work'):undefined,codexEnv:{...process.env,...env}});
  const listen=port=>new Promise((resolve,reject)=>{const fail=error=>reject(error);server.once('error',fail);server.listen(port,'127.0.0.1',()=>{server.removeListener('error',fail);resolve();});});
  if(preferred){try{await listen(preferred);}catch(error){if(!['EADDRINUSE','EACCES'].includes(error.code))throw error;}}
  for(let attempt=0;!server.listening&&attempt<32;attempt++){await listen(requested);if(reserved(server.address().port)){await new Promise(resolve=>server.close(resolve));if(requested)throw Error('指定ポートは予約済みです。');}}

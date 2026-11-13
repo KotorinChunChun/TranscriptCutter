@@ -26,7 +26,7 @@ import {buildTimedItemIndex,findActiveTimedItems,type PlaybackMode} from "@/src/
 import {TextCorrectionDialog,SelectionSpeakerDialog,type TranscriptCorrection,type SpeakerSelectionScope} from "@/components/transcript-edit-dialogs";
 import {buildSpeakerFilterContext,type FilterGap} from "@/src/lib/filter-context";
 import {TerminologyDialog} from '@/components/terminology-dialog';
-import {SubtitleCleanupDialog} from '@/components/subtitle-cleanup-dialog';
+import {SubtitleCleanupDialog} from '@/components/subtitle-cleanup-ai-dialog';
 import {learnTermPairs} from '@/terminology-store';
 import {correctionPair} from '@/src/lib/terminology';
 import './subtitle-cleanup.css';
@@ -81,8 +81,8 @@ export default function Home({active=true,view:requestedView,onViewChange,onWork
  const [mediaFile,setMediaFile]=useState<File|null>(restored?.file??null);const [mediaUrl,setMediaUrl]=useState(()=>restored?.file?URL.createObjectURL(restored.file):"");const [mediaDuration,setMediaDuration]=useState<number|undefined>(restored?.data.parsed.mediaDurationMs);
  const snapshot=useMemo(()=>({project:exportProjectJson(baseDoc,history.present,{sourceFile:fileName,...(mediaDuration!==undefined?{mediaDurationMs:mediaDuration}:{})}),comparison:comparison?exportComparisonJson(comparison):null,isSample,warnings,merging,maxGap,showTimes,largeText,showDeleted} satisfies EditorSnapshot),[baseDoc,history.present,fileName,mediaDuration,comparison,isSample,warnings,merging,maxGap,showTimes,largeText,showDeleted]);
  useWorkspaceSave('editor',snapshot,mediaFile);
- const [mediaExportBusy,setMediaExportBusy]=useState(false);
- useEffect(()=>{onWorkspaceBusyChange?.(mediaExportBusy);},[mediaExportBusy,onWorkspaceBusyChange]);
+ const [mediaExportBusy,setMediaExportBusy]=useState(false),[aiCleanupBusy,setAiCleanupBusy]=useState(false);
+ useEffect(()=>{onWorkspaceBusyChange?.(mediaExportBusy||aiCleanupBusy);},[mediaExportBusy,aiCleanupBusy,onWorkspaceBusyChange]);
  const [exportTimeline,setExportTimeline]=useState<"original"|"edited">("original");const [speakerFormat,setSpeakerFormat]=useState<"voice"|"prefix">("voice");
  const vttInput=useRef<HTMLInputElement>(null),mediaInput=useRef<HTMLInputElement>(null),searchInput=useRef<HTMLInputElement>(null),sentinel=useRef<HTMLDivElement>(null);
  const transcriptRef=useRef<HTMLElement|null>(null);
@@ -287,7 +287,7 @@ export default function Home({active=true,view:requestedView,onViewChange,onWork
  {textSelection&&<div className="text-selection-bar" role="region" aria-label="テキストの選択操作" onPointerDown={e=>e.preventDefault()}><strong>{textSelection.characterCount}文字を選択</strong><button className="button secondary small" onClick={openSelectionSpeaker}><UserRound size={15}/>話者を変更</button><button className="button danger small" aria-keyshortcuts="Delete Backspace" title="選択範囲を削除（Delete／Backspace）" onClick={deleteTextSelection}><Trash2 size={15}/>選択範囲を削除</button><button className="icon-button" aria-label="テキストの選択を解除" onClick={()=>{clearSelection();setReviewText([]);setReviewRange(null);}}><X size={16}/></button></div>}
  {toast&&<div className="toast" role="status" onMouseEnter={()=>setToastPaused(true)} onMouseLeave={()=>setToastPaused(false)} onFocus={()=>setToastPaused(true)} onBlur={e=>{if(!e.currentTarget.contains(e.relatedTarget as Node|null))setToastPaused(false);}}><Check size={17}/><span>{toast.text}</span>{toastCanUndo&&<button className="toast-undo" aria-label="直前の編集を元に戻す" onClick={()=>{undo();notify("直前の編集を元に戻しました");}}><Undo2 size={15}/>元に戻す</button>}<button className="icon-button" aria-label="通知を閉じる" onClick={()=>setToast(null)}><X size={14}/></button></div>}
  {modal==="terminology"&&<TerminologyDialog onClose={()=>setModal(null)}/>}
- {modal==="cleanup"&&<SubtitleCleanupDialog sources={cleanupSources} onGenerated={addCleanup} onClose={()=>setModal(null)}/>}
+ {modal==="cleanup"&&<SubtitleCleanupDialog sources={cleanupSources} onGenerated={addCleanup} onBusy={setAiCleanupBusy} onClose={()=>setModal(null)}/>}
  {modal==="correct"&&<TextCorrectionDialog cues={correctionCueIds.map(id=>doc.cueById.get(id)).filter((cue):cue is Cue=>!!cue)} onSave={saveCorrection} onClose={()=>{setModal(null);setError("");}} error={error}/>}
  {modal==="selection-speaker"&&speakerSelection&&<SelectionSpeakerDialog text={speakerSelection.text} speakers={[...new Set([...atoms.map(alias),"話者不明"])]} canChangeFromSelection={new Set(speakerSelection.spans.map(span=>span.cueId)).size===1} onSave={saveSelectionSpeaker} onClose={()=>{setModal(null);setError("");}} error={error}/>}
  {modal==="download"&&downloadFile&&<DownloadResult key={downloadFile.url} file={downloadFile} onClose={()=>setModal(null)}/>}
