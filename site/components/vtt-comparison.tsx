@@ -347,11 +347,11 @@ export function VttComparison({ session, active, onSample, canSample, onChange, 
     {label:'AI生成',disabled:!session,run:onGenerate},
   ]}/>;
   const header=<div className="comparison-workspace-heading">
-    {canPlay?transport:<span className="comparison-media-drop-hint" title="ここに動画(mp4)をドロップして読込">ここに動画(mp4)をドロップして読込</span>}
+    {canPlay?transport:<span className="comparison-media-drop-hint" title="ここに動画（MP4・WebM）をドロップして読込">ここに動画（MP4・WebM）をドロップして読込</span>}
     <div className="comparison-primary-actions"><SaveMenu stage={2} active={active} className="button primary small"/><button type="button" className="button primary small" disabled={busy||!summary?.cueCount} onClick={onApply}>動画編集へ進む<ArrowRight size={14}/></button></div>
   </div>;
   if (!session || !sources?.length || !summary) return <section className="vtt-comparison comparison-empty-workspace" aria-label="字幕比較">
-    {header}<div className="comparison-drop-content"><span>字幕(vtt)・動画(mp4)・プロジェクトをドロップ</span><div className="comparison-empty-actions">{canSample&&<button className="button secondary" disabled={busy} onClick={onSample}>サンプル</button>}{addition}</div></div>
+    {header}<div className="comparison-drop-content"><span>字幕(vtt)・動画（MP4・WebM）・プロジェクトをドロップ</span><div className="comparison-empty-actions">{canSample&&<button className="button secondary" disabled={busy} onClick={onSample}>サンプル</button>}{addition}</div></div>
   </section>;
 
   const warnings = [...new Set([...summary.warnings, ...sources.flatMap(source => source.warnings.map(warning => `${source.name}：${warning}`))])];
