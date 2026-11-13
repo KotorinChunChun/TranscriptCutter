@@ -110,6 +110,10 @@
 .comparison-add-menu{max-width:calc(100vw - 16px);box-sizing:border-box;}
 .comparison-add-menu>button:disabled{opacity:.45;cursor:default;}
 .comparison-add-menu>button:focus-visible{outline:2px solid #16856a;outline-offset:-2px;background:#e5f2eb;}
+.comparison-view-toggle{display:inline-flex;align-items:center;gap:0;padding:2px;border:1px solid #9ab8ab;border-radius:22px;background:#edf4ef;}
+.compact-ui .comparison-view-toggle>.button{min-height:32px;padding:4px 10px;border:0;border-radius:19px;background:transparent;color:#315b4d;white-space:nowrap;}
+.compact-ui .comparison-view-toggle>.button[aria-pressed=true]{background:var(--tc-green);color:#fff;box-shadow:0 1px 3px #173c3626;}
+.compact-ui .comparison-view-toggle>.button:focus-visible{outline:2px solid #138ab4;outline-offset:1px;}
 @media(max-width:650px){
  .vtt-comparison .comparison-workspace-heading{gap:5px;}
  .vtt-comparison .comparison-workspace-heading:has(.comparison-transport){flex-wrap:wrap;}

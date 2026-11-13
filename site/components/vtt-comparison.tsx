@@ -364,7 +364,7 @@ export function VttComparison({ session, active, onSample, canSample, onChange, 
   return <section className={`vtt-comparison comparison-layout-preview${simple?" comparison-simple":""}`} aria-label="字幕比較" style={timelineStyle}>
     {header}
 
-    <div className="comparison-tools"><div className="action-group" role="group" aria-label="比較の表示"><button className="button secondary small" aria-pressed={simple} onClick={()=>{setSimple(true);localStorage.setItem('tc-comparison-view','simple');}}>簡易</button><button className="button secondary small" aria-pressed={!simple} onClick={()=>{setSimple(false);localStorage.setItem('tc-comparison-view','detail');}}>詳細</button></div>
+    <div className="comparison-tools"><div className="action-group comparison-view-toggle" role="group" aria-label="比較の表示"><button className="button secondary small" aria-pressed={simple} onClick={()=>{setSimple(true);localStorage.setItem('tc-comparison-view','simple');}}>簡易</button><button className="button secondary small" aria-pressed={!simple} onClick={()=>{setSimple(false);localStorage.setItem('tc-comparison-view','detail');}}>詳細</button></div>
       <label className="comparison-search"><Search size={15}/><input type="search" placeholder="字幕・話者・時刻を検索" value={query} onChange={event => setQuery(event.target.value)} aria-label="比較中の字幕を検索"/>{query && <button type="button" aria-label="検索をクリア" onClick={() => setQuery("")}><X size={13}/></button>}</label>
       <label className="comparison-difference-toggle"><input type="checkbox" checked={differencesOnly} disabled={sources.length < 2} onChange={event => setDifferencesOnly(event.target.checked)}/><span>差分のみ</span></label>
       <div className="comparison-tools-divider"/>
