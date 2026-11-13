@@ -5,6 +5,7 @@ import Home,{type WorkspaceView} from './app/page';
 import {Recognition} from './recognition';
 import './browser.css';
 import './ui-consistency.css';
+import './app/editor-table.css';
 import {LauncherSettingsLink} from './launcher-settings';
 import {TerminologyDialog} from './components/terminology-dialog';
 import {Modal} from './components/editor-ui';

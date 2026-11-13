@@ -23,7 +23,7 @@ export interface EditorState {
   /** Immutable document revisions travel with the same undo/redo snapshot as cuts. */
   cueRevisions?: RevisedCue[];
 }
-export interface GroupOptions { merge?: boolean; maxGapMs?: number | null }
+export interface GroupOptions { merge?: boolean; maxGapMs?: number | null; /** Display only; does not establish speaker identity. */ mergeUnknown?: boolean }
 export interface EditorGroup {
   id: string; cueIds: string[]; cues: Cue[]; lines: Line[]; speaker: string | null; canonicalSpeaker: string | null;
   start: number; end: number; text: string; sourceCount: number; isMultiVoice: boolean; manual: boolean; deleted: boolean;
@@ -380,7 +380,7 @@ export function buildGroups(doc: EditorDocument, state: EditorState, options: Gr
     const text = retainedParts(cue, 0, cue.text.length, spansByCue.get(cue.id) ?? []).map(s => cue.text.slice(s.from, s.to)).join("");
     const previous = groups.at(-1);
     const forced = !!previousCue && state.forcedJoins.includes(previousCue.id);
-    const auto = options.merge !== false && previous && canonical !== null && previous.canonicalSpeaker === canonical && !multi && !previous.isMultiVoice && cue.start >= (previousCue?.start ?? 0) && cue.start - previous.end <= maxGap;
+    const auto = options.merge !== false && previous && (canonical !== null || options.mergeUnknown === true) && previous.canonicalSpeaker === canonical && !multi && !previous.isMultiVoice && cue.start >= (previousCue?.start ?? 0) && cue.start - previous.end <= maxGap;
     if (previous && (forced || auto)) {
       previous.cueIds.push(cue.id); previous.cues.push(cue); previous.lines.push(...(doc.linesByCue.get(cue.id) ?? []));
       previous.end = Math.max(previous.end, cue.end); previous.text += `${previous.text && text ? "\n" : ""}${text}`;
