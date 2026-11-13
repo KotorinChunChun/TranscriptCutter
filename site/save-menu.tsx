@@ -28,7 +28,7 @@ export function SaveMenu({stage,active=true,className='workflow-save'}:{stage:nu
   return()=>{window.removeEventListener('pointerdown',outside);window.removeEventListener('keydown',key,true);window.removeEventListener(changedEvent,refresh);};
  },[open,refresh]);
  if(!active)return null;
- return <><button ref={trigger} className={className} title="保存する内容を選択" aria-haspopup="menu" aria-expanded={open} aria-controls={open?'save-options':undefined} onClick={()=>{if(!open){refresh();const box=trigger.current!.getBoundingClientRect();setPosition({top:box.bottom+4,right:Math.max(8,innerWidth-box.right)});}setOpen(!open);}}>保存</button>{open&&createPortal(<div id="save-options" ref={menu} className="save-options" style={{...position,maxHeight:`calc(100dvh - ${position.top+8}px)`}} role="menu" aria-label="保存する内容" onKeyDown={event=>{
+ return <><button ref={trigger} className={className} title="保存する内容を選択" aria-haspopup="menu" aria-expanded={open} aria-controls={open?'save-options':undefined} onClick={()=>{if(!open){refresh();const box=trigger.current!.getBoundingClientRect();setPosition({top:box.bottom+4,right:Math.max(8,innerWidth-box.right)});}setOpen(!open);}}>保存<span aria-hidden="true" className="save-menu-caret">▾</span></button>{open&&createPortal(<div id="save-options" ref={menu} className="save-options" style={{...position,maxHeight:`calc(100dvh - ${position.top+8}px)`}} role="menu" aria-label="保存する内容" onKeyDown={event=>{
   if(!['ArrowDown','ArrowUp','Home','End','Tab'].includes(event.key))return;
   if(event.key==='Tab'){setOpen(false);return;}
   event.preventDefault();const buttons=Array.from(menu.current!.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')),index=buttons.indexOf(document.activeElement as HTMLButtonElement);

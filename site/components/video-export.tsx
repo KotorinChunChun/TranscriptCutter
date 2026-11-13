@@ -13,6 +13,7 @@ type RenderedMedia = Awaited<ReturnType<typeof renderCutMedia>>;
 type MediaFormat = "mp4" | "webm";
 type CompletedExport = {
   source: File;
+  archive?: {blob:Blob;url:string;fileName:string};
   media: RenderedMedia;
   url: string;
   fileName: string;
@@ -30,6 +31,7 @@ export type VideoExportDialogProps = {
   preserveTail?: boolean;
   onClose: () => void;
   onBusyChange?: (busy: boolean) => void;
+  bundle?: (media:{blob:Blob;fileName:string;durationMs:number;sourceDurationMs:number},signal:AbortSignal,onProgress:(fraction:number)=>void)=>Promise<{blob:Blob;fileName:string}>;
 };
 
 const humanBytes = (bytes: number) => {
@@ -53,7 +55,7 @@ const requestBinaryDownload = (url: string, fileName: string) => {
  * Keep this component mounted while its source File remains selected. Closing
  * hides the dialog and cancels work, but retains a completed binary result.
  */
-export function VideoExportDialog({ open, file, cuts, subtitleEndMs, onClose, onBusyChange, preserveTail=true }: VideoExportDialogProps) {
+export function VideoExportDialog({ open, file, cuts, subtitleEndMs, onClose, onBusyChange, preserveTail=true, bundle }: VideoExportDialogProps) {
   const [inspection, setInspection] = useState<{ source: File; media: Inspection } | null>(null);
   const [inspecting, setInspecting] = useState(false);
   const [inspectionError, setInspectionError] = useState("");
@@ -68,6 +70,7 @@ export function VideoExportDialog({ open, file, cuts, subtitleEndMs, onClose, on
   const [notice, setNotice] = useState("");
   const [siteUrl, setSiteUrl] = useState("");
 
+  const bundleMode=!!bundle;
   const sourceRef = useRef(file);
   sourceRef.current = file;
   const mountedRef = useRef(true);
@@ -79,7 +82,7 @@ export function VideoExportDialog({ open, file, cuts, subtitleEndMs, onClose, on
   busyCallback.current = onBusyChange;
   const info = inspection?.source === file ? inspection.media : null;
   const result = completed?.source === file ? completed : null;
-  const signature = useMemo(() => JSON.stringify([cutKey(cuts, subtitleEndMs),preserveTail]), [cuts, subtitleEndMs,preserveTail]);
+  const signature = useMemo(() => JSON.stringify([cutKey(cuts, subtitleEndMs),preserveTail,bundleMode]), [cuts, subtitleEndMs,preserveTail,bundleMode]);
   const resultChanged = !!result && result.cutSignature !== signature;
 
   const planning = useMemo(() => {
@@ -105,8 +108,11 @@ export function VideoExportDialog({ open, file, cuts, subtitleEndMs, onClose, on
     if (!old) return;
     // A result backed by OPFS must lose its object URL before its file is removed.
     URL.revokeObjectURL(old.url);
+    if(old.archive)URL.revokeObjectURL(old.archive.url);
     try { await old.media.release(); } catch { /* cleanup must not obscure the next export */ }
   }, []);
+
+  useEffect(()=>{void disposeResult();},[bundleMode,disposeResult]);
 
   const cancelRendering = useCallback(() => {
     const controller = renderAbort.current;
@@ -193,6 +199,7 @@ export function VideoExportDialog({ open, file, cuts, subtitleEndMs, onClose, on
     setRenderError("");
     setNotice("");
     setProgress({ fraction: 0, stage: "書き出しを準備しています", outputBytes: 0 });
+    let pendingMedia:RenderedMedia|null=null;
     try {
       await disposeResult();
       if (controller.signal.aborted || version !== renderVersion.current || sourceRef.current !== source) return;
@@ -208,26 +215,37 @@ export function VideoExportDialog({ open, file, cuts, subtitleEndMs, onClose, on
           setProgress({ fraction: Math.max(0, Math.min(1, update.fraction)), stage: update.stage, outputBytes: Math.max(0, update.outputBytes) });
         },
       });
+      pendingMedia=media;
       if (!mountedRef.current || controller.signal.aborted || version !== renderVersion.current || sourceRef.current !== source) {
-        await media.release();
+        pendingMedia=null;await media.release();
         return;
       }
-      if (!media.blob.size) { await media.release(); throw new Error("書き出したファイルが空でした。入力ファイルとカット範囲を確認してください。"); }
-      let url: string;
-      try { url = URL.createObjectURL(media.blob); }
-      catch (error) { await media.release(); throw error; }
+      if (!media.blob.size) { throw new Error("書き出したファイルが空でした。入力ファイルとカット範囲を確認してください。"); }
       const base = source.name.replace(/\.[^./\\]+$/, "") || "recording";
-      const next: CompletedExport = { source, media, url, fileName: `${base}_cut.${media.extension}`, cutSignature: snapshotSignature, hasVideo, format: selectedFormat, cutCount: plannedCutCount, subtitleEndMs: snapshotSubtitleEndMs };
+      const fileName=`${base}_cut.${media.extension}`;
+      let packaged:{blob:Blob;fileName:string}|undefined;
+      if(bundle){
+        setProgress({fraction:0,stage:'全部保存のZIPを作成中',outputBytes:media.blob.size});
+        packaged=await bundle({blob:media.blob,fileName,durationMs:media.durationMs,sourceDurationMs:info.durationMs},controller.signal,fraction=>setProgress({fraction,stage:'全部保存のZIPを作成中',outputBytes:media.blob.size}));
+      }
+      controller.signal.throwIfAborted();
+      if(!mountedRef.current||version!==renderVersion.current||sourceRef.current!==source){await media.release();pendingMedia=null;return;}
+      const url=URL.createObjectURL(media.blob);
+      let archive:CompletedExport['archive'];
+      try{if(packaged)archive={...packaged,url:URL.createObjectURL(packaged.blob)};}catch(error){URL.revokeObjectURL(url);throw error;}
+      const next: CompletedExport = { source, media, url, archive, fileName, cutSignature: snapshotSignature, hasVideo, format: selectedFormat, cutCount: plannedCutCount, subtitleEndMs: snapshotSubtitleEndMs };
+      pendingMedia=null;
       completedRef.current = next;
       setCompleted(next);
       setProgress({ fraction: 1, stage: "完了", outputBytes: media.blob.size });
       try {
-        requestBinaryDownload(url, next.fileName);
+        requestBinaryDownload(next.archive?.url??url, next.archive?.fileName??next.fileName);
         setNotice("ファイルを作成し、ブラウザにダウンロードを要求しました。保存状況はブラウザのダウンロード一覧で確認できます。");
       } catch {
         setNotice("ファイルは作成できました。自動ダウンロードを開始できなかったため、下のダウンロードボタンをお使いください。");
       }
     } catch (error) {
+      if(pendingMedia){try{await pendingMedia.release();}catch{}}
       if (!mountedRef.current || version !== renderVersion.current || sourceRef.current !== source) return;
       if (controller.signal.aborted || (error instanceof Error && error.name === "AbortError")) setNotice("書き出しを中断しました。元ファイルとカット記録はそのままです。");
       else setRenderError(errorText(error));
@@ -242,8 +260,8 @@ export function VideoExportDialog({ open, file, cuts, subtitleEndMs, onClose, on
 
 
   if (!open) return null;
-  return <Modal title={info?.hasVideo === false ? "カットして音声を書き出す" : "カットして動画を書き出す"} eyebrow="EXPORT CUT MEDIA" wide onClose={closeDialog} footer={<>
-    {rendering ? <><span className="modal-footer-note">この画面を閉じると、書き出しを中断します。</span><button className="button secondary" onClick={cancelRendering} disabled={cancelling}><Square size={14}/>{cancelling ? "中断しています…" : "書き出しを中断"}</button></> : <><button className="button secondary" onClick={closeDialog}>閉じる</button><button className="button primary" disabled={!canRender} onClick={() => void startRendering()}>{result ? <RotateCcw size={16}/> : <Scissors size={16}/>} {result ? "現在のカットで作り直す" : `カットして${outputType}を書き出す`}</button></>}
+  return <Modal title={bundleMode?"すべて保存（動画・字幕・作業データ）":info?.hasVideo === false ? "カットして音声を書き出す" : "カットして動画を書き出す"} eyebrow="EXPORT CUT MEDIA" wide onClose={closeDialog} footer={<>
+    {rendering ? <><span className="modal-footer-note">この画面を閉じると、書き出しを中断します。</span><button className="button secondary" onClick={cancelRendering} disabled={cancelling}><Square size={14}/>{cancelling ? "中断しています…" : "書き出しを中断"}</button></> : <><button className="button secondary" onClick={closeDialog}>閉じる</button><button className="button primary" disabled={!canRender} onClick={() => void startRendering()}>{result ? <RotateCcw size={16}/> : <Scissors size={16}/>} {bundleMode?(result?"全部保存を作り直す":"すべて書き出して保存"):result ? "現在のカットで作り直す" : `カットして${outputType}を書き出す`}</button></>}
   </>}>
     <div className="video-export-source"><span className="video-export-file-icon">{info?.hasVideo === false ? <Volume2 size={22}/> : <Film size={22}/>}</span><div><strong title={file.name}>{file.name}</strong><p>{humanBytes(file.size)}{info ? ` · ${formatTime(info.durationMs, true)}${info.hasVideo ? ` · ${info.width} × ${info.height}` : " · 音声ファイル"}` : " · ファイルの長さと対応形式を確認"}</p></div></div>
 
@@ -266,7 +284,7 @@ export function VideoExportDialog({ open, file, cuts, subtitleEndMs, onClose, on
     {renderError && <div className="error-banner" role="alert"><AlertCircle size={17}/><span>{renderError}</span></div>}
     {rendering && <div className="video-render-progress" role="status"><div><LoaderCircle size={18}/><strong>{cancelling ? "中断しています…" : progress.stage}</strong><span>{Math.round(progress.fraction * 100)}%</span></div><div className="progress-track" role="progressbar" aria-label="動画書き出しの進捗" aria-valuenow={Math.round(progress.fraction * 100)} aria-valuemin={0} aria-valuemax={100}><div className="progress-fill" style={{ width: `${progress.fraction * 100}%` }}/></div><p>{progress.outputBytes > 0 ? `${humanBytes(progress.outputBytes)} を作成中 · ` : ""}書き出しが終わるまで、このタブを開いたままにしてください。</p></div>}
     {notice && !rendering && <p className="video-export-notice" role="status"><Check size={15}/><span>{notice}</span></p>}
-    {result && <section className="video-export-result" aria-label="生成済みファイル"><div className="video-export-result-heading"><span className="video-export-check"><Check size={19}/></span><div><h3>カット済み{result.hasVideo ? "動画" : "音声"}ができました</h3><p>{result.cutCount}区間をカット · 計算値 {formatTime(result.media.durationMs, true)} · {humanBytes(result.media.blob.size)} · VTT終了 {formatTime(result.subtitleEndMs, true)}</p></div></div>{resultChanged && <div className="inline-notice"><AlertCircle size={15}/><span>このファイルの生成後にカット記録またはVTTの終了時刻が変わっています。以下は生成時点の結果です。最新の編集を反映するには「現在のカットで作り直す」を押してください。</span></div>}<p className="video-export-filename" title={result.fileName}>{result.fileName}</p>{result.hasVideo ? <video className="video-export-preview" controls playsInline preload="metadata" src={result.url}/> : <audio className="video-export-audio" controls preload="metadata" src={result.url}/>}<div className="video-export-downloads"><a className="button primary" href={result.url} download={result.fileName} onClick={() => setNotice("ブラウザにダウンロードを要求しました。保存状況はブラウザのダウンロード一覧で確認できます。")}><ArrowDownToLine size={16}/>生成した{result.hasVideo ? "動画" : "音声"}をダウンロード</a><a className="button ghost small" href={result.url} target="_blank" rel="noopener noreferrer"><ExternalLink size={14}/>{result.hasVideo ? "動画" : "音声"}を別タブで開く</a></div><p className="form-help">閉じても、このファイルを選択している間は結果を開き直せます。別の元ファイルを選ぶ・作り直す・画面を更新すると、この結果は解除されます。</p></section>}
+    {result && <section className="video-export-result" aria-label="生成済みファイル"><div className="video-export-result-heading"><span className="video-export-check"><Check size={19}/></span><div><h3>{result.archive?"全部保存のZIPができました":`カット済み${result.hasVideo?"動画":"音声"}ができました`}</h3><p>{result.cutCount}区間をカット · 計算値 {formatTime(result.media.durationMs, true)} · {humanBytes(result.archive?.blob.size??result.media.blob.size)} · VTT終了 {formatTime(result.subtitleEndMs, true)}</p></div></div>{resultChanged && <div className="inline-notice"><AlertCircle size={15}/><span>このファイルの生成後にカット記録またはVTTの終了時刻が変わっています。以下は生成時点の結果です。最新の編集を反映するには「現在のカットで作り直す」を押してください。</span></div>}<p className="video-export-filename" title={result.archive?.fileName??result.fileName}>{result.archive?.fileName??result.fileName}</p>{result.hasVideo ? <video className="video-export-preview" controls playsInline preload="metadata" src={result.url}/> : <audio className="video-export-audio" controls preload="metadata" src={result.url}/>}<div className="video-export-downloads"><a className="button primary" href={result.archive?.url??result.url} download={result.archive?.fileName??result.fileName} onClick={() => setNotice("ブラウザにダウンロードを要求しました。保存状況はブラウザのダウンロード一覧で確認できます。")}><ArrowDownToLine size={16}/>{result.archive?"全部保存（ZIP）をダウンロード":`生成した${result.hasVideo?"動画":"音声"}をダウンロード`}</a><a className="button ghost small" href={result.url} target="_blank" rel="noopener noreferrer"><ExternalLink size={14}/>{result.hasVideo ? "動画" : "音声"}を別タブで開く</a></div><p className="form-help">閉じても、このファイルを選択している間は結果を開き直せます。別の元ファイルを選ぶ・作り直す・画面を更新すると、この結果は解除されます。</p></section>}
     <div className="video-export-browser-note"><ExternalLink size={15}/><p>ChatGPT内の表示でダウンロードが始まらない場合は、<a href={siteUrl || undefined} target="_blank" rel="noopener noreferrer">このサイトを別タブで開いて</a>書き出してください。別タブでは元動画を選び直し、保存した編集プロジェクトを読み込めます。</p></div>
     <p className="video-export-local"><ShieldCheck size={14}/>元ファイルは変更せず、ブラウザ内で別のファイルを作成します。</p>
   </Modal>;
