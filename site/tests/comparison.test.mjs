@@ -15,6 +15,7 @@ const {
   removeComparisonSource, buildComparisonRows, getComparisonChoice,
   getComparisonSpeakers, getSelectedCues, getComparisonSummary,
   exportComparisonJson, importComparisonJson,
+  toggleComparisonText, getComparisonSkippedRanges,
 } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`);
 
 const cue = (id, text, start, end, speaker = "話者1") => ({ id, text, start, end, speaker, sourceIds: [id], sourceCount: 1 });
@@ -27,6 +28,36 @@ const chooseAll = (session, sourceId) => ({
   }])),
 });
 const choose = (session, row, textSourceId, speaker = null) => ({ ...session, choices: { ...session.choices, [row.id]: { textSourceId, speaker } } });
+
+test("comparison playback: toggling adoption permits zero choices and follows the adopted speaker", () => {
+  const session=createComparisonSession([model('a',[cue('a','先頭',0,3000,'話者A')]),model('b',[cue('b','別案',0,3000,'話者B')])]);
+  const row=buildComparisonRows(session)[0];
+  const edited=choose(session,row,'a',{custom:'以前の指定'});
+  assert.deepEqual(toggleComparisonText(edited,row,'b',true),{textSourceId:'b',speaker:null});
+  edited.choices[row.id]=toggleComparisonText(edited,row,'a',true);
+  assert.deepEqual(getSelectedCues(edited),[]);
+  const restored=importComparisonJson(exportComparisonJson(edited));
+  assert.equal(getComparisonChoice(restored,buildComparisonRows(restored)[0]).textSourceId,null);
+  assert.deepEqual(getComparisonSkippedRanges(restored),[{start:0,end:3000}]);
+  assert.match(serializeVtt(getSelectedCues(restored)),/^WEBVTT/);
+});
+
+test("comparison playback: explicit exclusions protect overlapping adopted speech and retain unmentioned gaps", () => {
+  const session=createComparisonSession([model('a',[cue('a0','前',0,4000),cue('a1','後',4000,8000),cue('a2','末',12000,14000)]),model('b',[cue('b','長い候補',1000,5000)])]);
+  const rows=buildComparisonRows(session);
+  let edited=choose(session,rows[0],'b');
+  edited=choose(edited,rows[1],null);
+  assert.deepEqual(getComparisonSkippedRanges(edited),[{start:5000,end:8000}]);
+  assert.deepEqual(getComparisonSkippedRanges(session),[]);
+});
+
+test("comparison playback: same-label warning is omitted while exported speaker scoping stays intact", () => {
+  const session=createComparisonSession([model('a',[cue('a0','前',0,2000),cue('a1','後',2000,4000)]),model('b',[cue('b','後案',2000,4000)])]);
+  const rows=buildComparisonRows(session),edited=choose(session,rows[1],'b');
+  assert.equal(getComparisonSummary(edited).speakerCollisionCount,1);
+  assert.equal(getComparisonSummary(edited).warnings.some(w=>w.includes('同じ話者ラベル')),false);
+  assert.match(getSelectedCues(edited)[1].speaker,/モデルB/);
+});
 function fixtures() {
   return [
     model("a", [cue("cue-1", "今日はAI勉強会を始めます。", 0, 4000), cue("cue-2", "資料の整理について確認します。", 4000, 7000, "話者2"), cue("cue-3", "画像の分類を試します😀。", 7500, 10000), cue("cue-4", "結果を比較して確認しましょう。", 10500, 13000, "話者2"), cue("cue-5", "これで説明を終わります。", 13500, 16000)]),

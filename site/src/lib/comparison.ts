@@ -219,6 +219,35 @@ export function getComparisonChoice(session: ComparisonSession, row: ComparisonR
   return explicit ?? { textSourceId: row.candidates[session.referenceId]?.length ? session.referenceId : null, speaker: null };
 }
 
+export function toggleComparisonText(session: ComparisonSession, row: ComparisonRow, sourceId: string, followSpeaker: boolean): ComparisonChoice {
+  const current = getComparisonChoice(session, row);
+  const textSourceId = current.textSourceId === sourceId ? null : sourceId;
+  return { textSourceId, speaker: followSpeaker || textSourceId === null ? null : current.speaker };
+}
+
+/** Only explicit exclusions skip time; overlapping adopted speech stays audible. */
+export function getComparisonSkippedRanges(session: ComparisonSession): { start: number; end: number }[] {
+  const rows = buildComparisonRows(session);
+  const merge = (ranges: {start:number;end:number}[]) => {
+    const result: {start:number;end:number}[] = [];
+    for (const range of ranges.sort((a,b)=>a.start-b.start)) {
+      const last=result.at(-1);
+      if(last && last.end>=range.start)last.end=Math.max(last.end,range.end);
+      else result.push({...range});
+    }
+    return result;
+  };
+  const kept=merge(rows.flatMap(row=>{const id=getComparisonChoice(session,row).textSourceId;return id?(row.candidates[id]??[]).map(c=>({start:c.start,end:c.end})):[];}));
+  const excluded=merge(rows.filter(row=>own(session.choices,row.id)&&session.choices[row.id].textSourceId===null).map(row=>({start:row.start,end:row.end})));
+  const result: {start:number;end:number}[]=[];
+  let index=0;
+  for(const range of excluded){let cursor=range.start;while(index<kept.length&&kept[index].end<=cursor)index++;
+    for(let j=index;j<kept.length&&kept[j].start<range.end;j++){if(kept[j].start>cursor)result.push({start:cursor,end:Math.min(kept[j].start,range.end)});cursor=Math.max(cursor,kept[j].end);if(cursor>=range.end)break;}
+    if(cursor<range.end)result.push({start:cursor,end:range.end});
+  }
+  return result;
+}
+
 export function addComparisonSources(session: ComparisonSession, sources: readonly ComparisonSource[]): ComparisonSession {
   if (!sources.length) return session;
   return validateSession({ ...session, sources: [...session.sources, ...sources] });
@@ -341,9 +370,7 @@ export function getComparisonSummary(session: ComparisonSession, rows?: readonly
   for (const cue of cues) { if (cue.start < latestEnd) overlapCount += 1; latestEnd = Math.max(latestEnd, cue.end); }
   const warnings: string[] = [];
   if (overlapCount) warnings.push(`採用した字幕に時刻が重なる箇所が${overlapCount}件あります。元の時刻を保っているため、区間の前後を確認してください。`);
-  if (ambiguous.size) warnings.push(`異なるモデルで同じ話者ラベルが${ambiguous.size}種類あります。混同を避けるため採用結果にはモデル名を添えます。同じ人なら話者名の対応で共通の名前を指定できます。`);
   const skippedRowCount = complete.length - selectedRowCount;
-  if (skippedRowCount) warnings.push(`${skippedRowCount}区間は採用する字幕が未選択です。採用結果には含まれません。`);
   return { selectedRowCount, skippedRowCount, cueCount: cues.length, overlapCount, speakerCollisionCount: ambiguous.size, warnings };
 }
 
@@ -359,7 +386,7 @@ function normalizeSpeaker(value: unknown, sourceSpeakers: Map<string, Set<string
 function validateSession(value: unknown): ComparisonSession {
   if (!record(value)) throw new Error("比較プロジェクトの形式が正しくありません。");
   keys(value, ["schemaVersion", "kind", "sources", "referenceId", "choices", "speakerAliases"], "比較プロジェクト");
-  if (value.schemaVersion !== 1 || value.kind !== "vtt-dialogue-comparison") throw new Error("対応するVTT比較プロジェクトではありません。");
+  if (value.schemaVersion !== 1 || value.kind !== "vtt-dialogue-comparison") throw new Error("対応する字幕比較プロジェクトではありません。");
   const sources = normalizeSources(value.sources);
   if (typeof value.referenceId !== "string" || !sources.some(source => source.id === value.referenceId)) throw new Error("比較の基準モデルが見つかりません。");
   const sourceSpeakers = new Map(sources.map(source => [source.id, new Set(getComparisonSpeakers(source))]));
