@@ -49,6 +49,11 @@ export async function startUnified({payload,assets,version,args=process.argv.sli
  try{
   directory=await extractProgram(payload,stateDir);
   try{config=JSON.parse(await readFile(configPath,'utf8'));saved=true;}catch(error){if(error.code!=='ENOENT')throw Error('利用方式の保存内容を確認してください。');}
+  if(!saved){
+   let port=19120;try{const registry=JSON.parse(await readFile(registryPath,'utf8'));const own=registry.servers.find(s=>s.visibility==='lan'&&s.application_id?.startsWith('transcript-cutter')&&s.allocation_status==='allocated');if(own)port=own.port;}catch{}
+   const address=Object.values(networkInterfaces()).flat().find(x=>x?.family==='IPv4'&&!x.internal)?.address;
+   config={...config,publicUrl:address?`https://${address}:${port}/`:'',certPath:'C:/AI/Certificates/example-Dev-Server-chain.pem',keyPath:'C:/AI/Certificates/example-Dev-Server.key'};
+  }
   const json=(res,status,data)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(data));};
   bootstrap=createServer(async(req,res)=>{
    const host=req.headers.host,port=bootstrap.address().port;

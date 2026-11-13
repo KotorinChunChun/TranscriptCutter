@@ -14,17 +14,17 @@ v0.1.1のWeb版リリースです。文字起こし・字幕比較・編集と�
 
 ## 起動
 
-単独EXEとインストーラーはNode.jsの別途導入なしで起動できます。GUIはブラウザーです。通常版は既存TranscriptionServerまたはブラウザーWhisperを使います。サーバー同梱版はTranscriptionServer v0.1.10を専用ポート・専用データで起動します。
+配布プログラムは **TranscriptCutter-v0.1.1.exe 一つ**です。インストールとNode.jsの別途導入は不要です。TranscriptCutterとTranscriptionServer v0.1.10のプログラムを内包し、初回に専用領域へ検証・展開します。GUIはブラウザーです。
 
-実行先で「TranscriptionServer」か「このブラウザー（Whisper）」を選べます。ブラウザー方式と字幕比較・編集は認識サーバーなしで動きます。同梱版も外部サーバーへ接続できます。AIモデル・認識実行環境・FFmpeg/FFprobeは同梱せず、必要に応じて管理画面からオンライン導入します。既存の共有サーバーは起動・停止しません。
+初回の設定画面で「このPCだけ／他PCにも公開」を選びます。このPCだけの場合はloopbackで両サービスを起動します。他PCにも公開する場合は、このPCのLAN IPv4アドレスを使ったHTTPS URL、固定ポート、証明書と秘密鍵の絶対パスを指定します。クライアントPCはその公開URLから、文字起こし・字幕比較・編集・サーバー管理を利用できます。証明書の信頼・ファイアウォールは管理者の方針で設定し、自動変更しません。私設LAN限定で、Entra認証やインターネット公開用の認証は同梱しません。
 
-配布ZIPを使用する場合はNode.js 22以降とPowerShell 7が必要です。ZIPは全体を展開してから次を実行します。
+設定は保存されます。次回から同じ方式で起動します。起動後の「利用方式」か、EXEの引数 --setup から変更できます。認識や導入処理中の変更は拒否します。このPCのLAN公開にはDevServerへの正式な事前予約が必要です。
 
-```pwsh
-pwsh -File scripts/Start-Web.ps1
-```
+モデル・認識実行環境・FFmpeg/FFprobeは同梱しません。「初回導入・サーバー管理」からオンライン導入してください。管理画面は同じ公開URLの /server/ にあり、文字起こしサーバーの内部ポートをクライアントへ公開する必要はありません。外部TranscriptionServerへの接続とブラウザーWhisperも利用できます。
 
-表示された `http://127.0.0.1:番号/` をEdgeまたはChromeで開きます。停止は起動したターミナルでCtrl+Cです。このPC内だけで接続できます。既定では空きポートを選び、`%LOCALAPPDATA%\TranscriptCutter\web\launcher.json`へ番号だけを保存して次回も使います。競合・予約済みの場合は他を停止せず、別ポートを選びます。保存先は `TC_WEB_STATE_DIR` でも指定できます。固定する場合は `-Port` を指定できますが、その固定番号が予約済み・使用中なら起動を中止します。LAN公開は行いません。
+保存先は %LOCALAPPDATA%/TranscriptCutter/unified です。展開済みプログラムはprograms、設定/認識データはservicesに分離します。既存の共有サーバーやモデル・データは変更しません。起動用コンソールの終了で専用サーバーと子孫を終了します。ブラウザーを閉じただけでは停止しません。
+
+開発用のWeb起動は従来どおり pwsh -File scripts/Start-Web.ps1 です。これは配布EXEと別のloopback確認用で、内包サーバーや公開モードを起動しません。
 
 ## 工程1：文字起こし
 
@@ -105,8 +105,9 @@ npm test
 npm run test:site
 npm run build:web
 npm run dev
-pwsh -File scripts/release-web.ps1
 npm run build:exe
+npm run check:exe
+npm run release:exe
 npm run check:exe
 ```
 
@@ -136,8 +137,8 @@ pwsh -File scripts/Start-Web.ps1
 ## v0.1.1の既知事項
 
 - TinyとWebGPU用fp32/q4構成で、日本語音声の誤認識・大量反復を確認しています。Base CPU q8も誤認識が残り、完成字幕には利用者の確認が必要です。認識設定は今回変更していません。
-- 他PCのブラウザーからアクセスするサーバー公開モードと、インストール時に利用方式を選ぶ統合は未実装です。この配布版のWeb待受は127.0.0.1限定です。外部TranscriptionServerへの接続には対応します。
-- 通常版とサーバー同梱版のインストーラーを別に配布します。どちらもWindows x64・未署名です。同梱版のサーバーと認識モデル等のオンライン導入は別です。
+- 公開モードはHTTPS・固定ポート・私設LAN限定です。別の物理PCでの実操作・証明書の信頼・ファイアウォール設定は環境ごとの確認が必要です。
+- 配布はWindows x64・未署名の単一EXEです。旧通常版/同梱版インストーラーとWeb ZIPの分割配布は廃止しました。AIモデル・認識実行環境・FFmpegは別途導入します。
 - AI字幕生成はCodex CLIの導入とログインが必要です。CLIや認証情報は同梱しません。通常の字幕比較と編集はAIを使わず利用できます。
 - 初回のモデル導入にはインターネット接続が必要です。ブラウザーキャッシュはURLのオリジンごとに独立します。
 - リリースの検証結果はdev/v0.1.1-imp.md、今回の認識比較はdev/v0.1.1-base-comparison.mdを参照してください。

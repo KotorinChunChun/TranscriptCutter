@@ -27,7 +27,7 @@ export async function pruneObsoleteReleases(root,version){
  const actualBase=await realpath(base);
  await inspect(current,actualBase);
  const names=await readdir(current);
- if(!names.some(name=>name===`TranscriptCutter-web-v${version}.exe`||name===`TranscriptCutter-web-v${version}.zip`))throw Error('現行配布物がないため旧版は削除しません。');
+ if(!names.some(name=>name===`TranscriptCutter-v${version}.exe`||name===`TranscriptCutter-web-v${version}.exe`||name===`TranscriptCutter-web-v${version}.zip`))throw Error('現行配布物がないため旧版は削除しません。');
  const obsolete=[];
  for(const name of await readdir(base)){
   if(name==='v'+version)continue;
