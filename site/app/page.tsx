@@ -18,13 +18,18 @@ import {TranscriptToken,type TranscriptInteractionMode} from "@/components/trans
 import {PlaybackRateInput} from "@/components/playback-rate-input";
 import {useTranscriptSelection} from "@/components/use-transcript-selection";
 import {VttComparison} from "@/components/vtt-comparison";
-import {createComparisonSession,addComparisonSources,getSelectedCues,exportComparisonJson,importComparisonJson,type ComparisonSession,type ComparisonSource} from "@/src/lib/comparison";
+import {createComparisonSession,addComparisonSources,putGeneratedSource,getSelectedCues,exportComparisonJson,importComparisonJson,type ComparisonSession,type ComparisonSource} from "@/src/lib/comparison";
 import {createSampleComparison} from "@/src/lib/comparison-sample";
 import {restoredWorkspace,useWorkspaceSave,workspaceRestoreError} from '@/workspace-storage';
 import {useTranscriptPlayback} from "@/components/use-transcript-playback";
 import {buildTimedItemIndex,findActiveTimedItems,type PlaybackMode} from "@/src/lib/transcript-playback";
 import {TextCorrectionDialog,SelectionSpeakerDialog,type TranscriptCorrection,type SpeakerSelectionScope} from "@/components/transcript-edit-dialogs";
 import {buildSpeakerFilterContext,type FilterGap} from "@/src/lib/filter-context";
+import {TerminologyDialog} from '@/components/terminology-dialog';
+import {SubtitleCleanupDialog} from '@/components/subtitle-cleanup-dialog';
+import {learnTermPairs} from '@/terminology-store';
+import {correctionPair} from '@/src/lib/terminology';
+import './subtitle-cleanup.css';
 import "./comparison.css";
 import "./transcript-editing.css";
 import "./compact-workspace.css";
@@ -38,7 +43,7 @@ const MUTED={color:"#788587",bg:"#eef1f1",bubble:"#f5f7f7"};
 const parts=getSpeakerParts;
 const isCompound=(name:string|null)=>parts(name).length>1;
 const fmtSeconds=(ms:number)=>`${(ms/1000).toFixed(2)}秒`;
-type ModalName="correct"|"selection-speaker"|"video"|"download"|"export"|"settings"|"help"|"rename"|"fillers"|"silence"|"cuts"|null;
+type ModalName="terminology"|"cleanup"|"correct"|"selection-speaker"|"video"|"download"|"export"|"settings"|"help"|"rename"|"fillers"|"silence"|"cuts"|null;
 type ToastMessage={text:string;undoFrom?:EditorState};
 
 export type WorkspaceView="chat"|"vtt"|"compare";
@@ -190,10 +195,10 @@ export default function Home({active=true,view:requestedView,onViewChange,onWork
   else playback.playFrom(start,mode);
  };
  const openCorrection=(cueIds:string[])=>{playback.pause();clearSelection();setError("");setCorrectionCueIds(cueIds);setModal("correct");};
- const saveCorrection=(changes:TranscriptCorrection[])=>{
+ const saveCorrection=(changes:TranscriptCorrection[],learn=false)=>{
   try{let next=state;for(const change of changes)next=replaceCueText(resolveEditorDocument(baseDoc,next),next,change.cueId,change.text);
    if(next===state){setModal(null);return;}
-   stopAnalysis();apply(()=>next);setModal(null);setQuery("");setSelectedLines(new Set());setFillerCandidates([]);setSilenceCandidates([]);clearSelection();notify("字幕を修正しました。音声とカット時刻は保持しています。",true);
+   if(learn){const pairs=changes.map(change=>correctionPair(doc.cueById.get(change.cueId)?.text??'',change.text)).filter((p):p is {from:string;to:string}=>!!p);if(pairs.length)learnTermPairs(pairs);}stopAnalysis();apply(()=>next);setModal(null);setQuery("");setSelectedLines(new Set());setFillerCandidates([]);setSilenceCandidates([]);clearSelection();notify("字幕を修正しました。音声とカット時刻は保持しています。",true);
   }catch(e){setError(e instanceof Error?e.message:"字幕を修正できませんでした。");}
  };
  const openSelectionSpeaker=()=>{if(!textSelection?.spans.length)return;playback.pause();setSpeakerSelection({spans:textSelection.spans.map(span=>({...span})),text:textSelection.text});setError("");setModal("selection-speaker");};
@@ -212,10 +217,12 @@ export default function Home({active=true,view:requestedView,onViewChange,onWork
  const downloadVtt=()=>{if(exportResult.error){setError(exportResult.error);return;}saveFile(`${baseName}_${exportTimeline==="edited"?"cut-timeline":"edited"}.vtt`,exportResult.text,"text/vtt;charset=utf-8");};
  const resetSample=async()=>{if(mediaExportBusy){notify("動画の書き出しを中止してから、サンプルを開いてください。");return;}if((isDirty||comparison)&&!(await confirmAction("サンプルに戻すと現在の編集内容と比較設定が置き換わります。必要な内容は保存しましたか？")))return;++importVersion.current;stopAnalysis();setLoading(false);playback.reset();setDoc(SAMPLE_DOC);setComparison(null);setHistory({past:[],present:createEditorState(),future:[]});setFileName("AI勉強会_サンプル.vtt");setIsSample(true);setWarnings([]);setError("");setQuery("");setFilter("all");setView("chat");setMediaFile(null);setMediaUrl("");setMediaDuration(undefined);setSidebarOpen(false);setSilenceCandidates([]);};
  const makeComparisonSource=(cues:Cue[],name:string,sourceFile:string,notes:string[]=[]):ComparisonSource=>({id:`model-${crypto.randomUUID()}`,name:name.replace(/\.vtt$/i,"").slice(0,80)||"モデル",fileName:sourceFile,cues,warnings:notes});
+ const cleanupSources=useMemo(()=>comparison?comparison.sources.filter(s=>!s.generated):hasTranscript?[makeComparisonSource(buildEditedCues(doc,state,{merge:false,maxGapMs:null,timeline:'original'}),fileName,fileName,warnings)]:[],[comparison,doc,state,hasTranscript,fileName,warnings]);
+ const addCleanup=(source:ComparisonSource)=>{const base=comparison??createComparisonSession(cleanupSources);setComparison(putGeneratedSource(base,source));setView('compare');setModal(null);notify('整理案を比較に追加しました。');};
  const enterComparison=()=>{if(mediaExportBusy){notify("動画の書き出しを中止してから比較を開いてください。");return;}if(!comparison&&hasTranscript&&!isSample)setComparison(createComparisonSession([makeComparisonSource(doc.cues,fileName,fileName,warnings)]));setView("compare");setQuery("");setSidebarOpen(false);clearSelection();};
  useEffect(()=>{if(active&&view==="compare"&&!comparison)enterComparison();},[active,view]);
  const chooseComparison=()=>{if(mediaExportBusy){notify("動画の書き出しを中止してからVTTを追加してください。");return;}setPasteOpen(true);setSidebarOpen(true);};
- const loadComparisonFiles=async(files:File[],append:boolean)=>{if(mediaExportBusy){notify("動画の書き出しを中止してからファイルを変更してください。");return;}const base=append?comparison:null;if(!files.length)return;if(files.some(file=>!/\.vtt$/i.test(file.name))){setError("比較にはVTTファイルを選択してください。比較プロジェクトのJSONは1つだけで開けます。");return;}if(files.length+(base?.sources.length??0)>3){setError("比較できるVTTは最大3つです。追加する場合は比較画面でモデルを1つ外してください。");setView("compare");return;}if(files.some(file=>file.size>20*1024*1024)){setError("VTTは1ファイル20 MB以下で選択してください。");return;}const version=++importVersion.current;setLoading(true);setError("");try{const inputs=await Promise.all(files.map(async file=>{const raw=new TextDecoder("utf-8",{fatal:true}).decode(await file.arrayBuffer());const parsed=parseVtt(raw);return makeComparisonSource(parsed.cues,file.name,file.name,parsed.warnings);}));if(version!==importVersion.current)return;const next=base?addComparisonSources(base,inputs):createComparisonSession(inputs);if(!append&&comparison&&!(await confirmAction("現在の比較を新しいVTTで置き換えます。必要な比較は先に保存してください。")))return;setComparison(next);setView("compare");setSidebarOpen(false);setQuery("");notify(`${next.sources.length}つのVTTを共通の時刻で並べました`);}catch(e){if(version===importVersion.current)setError(e instanceof Error?e.message:"比較用VTTを読み込めませんでした。");}finally{if(version===importVersion.current)setLoading(false);}};
+ const loadComparisonFiles=async(files:File[],append:boolean)=>{if(mediaExportBusy){notify("動画の書き出しを中止してからファイルを変更してください。");return;}const base=append?comparison:null;if(!files.length)return;if(files.some(file=>!/\.vtt$/i.test(file.name))){setError("比較にはVTTファイルを選択してください。比較プロジェクトのJSONは1つだけで開けます。");return;}if(files.length+(base?.sources.filter(s=>!s.generated).length??0)>3){setError("比較できるVTTは最大3つです。追加する場合は比較画面でモデルを1つ外してください。");setView("compare");return;}if(files.some(file=>file.size>20*1024*1024)){setError("VTTは1ファイル20 MB以下で選択してください。");return;}const version=++importVersion.current;setLoading(true);setError("");try{const inputs=await Promise.all(files.map(async file=>{const raw=new TextDecoder("utf-8",{fatal:true}).decode(await file.arrayBuffer());const parsed=parseVtt(raw);return makeComparisonSource(parsed.cues,file.name,file.name,parsed.warnings);}));if(version!==importVersion.current)return;const next=base?addComparisonSources(base,inputs):createComparisonSession(inputs);if(!append&&comparison&&!(await confirmAction("現在の比較を新しいVTTで置き換えます。必要な比較は先に保存してください。")))return;setComparison(next);setView("compare");setSidebarOpen(false);setQuery("");notify(`${next.sources.length}つのVTTを共通の時刻で並べました`);}catch(e){if(version===importVersion.current)setError(e instanceof Error?e.message:"比較用VTTを読み込めませんでした。");}finally{if(version===importVersion.current)setLoading(false);}};
  const handleFiles=(files:File[],forComparison=false)=>{if(!files.length)return;if(files.length===1&&(/\.json$/i.test(files[0].name)||!/\.vtt$/i.test(files[0].name))){void loadFile(files[0]);return;}if(forComparison||view==="compare"||files.length>1){void loadComparisonFiles(files,forComparison||view==="compare");return;}void loadFile(files[0]);};
  const saveComparison=()=>{if(!comparison){notify("比較するVTTを追加してください。");return;}try{saveFile("vtt-comparison.compare.json",exportComparisonJson(comparison));}catch(e){setError(e instanceof Error?e.message:"比較内容を保存できませんでした。");}};
  const downloadComparisonVtt=()=>{if(!comparison)return;try{const cues=getSelectedCues(comparison);if(!cues.length)throw new Error("採用する字幕を1つ以上選択してください。");const source=comparison.sources.find(source=>source.id===comparison.referenceId)??comparison.sources[0];saveFile(`${source.fileName.replace(/\.vtt$/i,"")}_selected.vtt`,serializeVtt(cues,{speakerFormat:"voice"}),"text/vtt;charset=utf-8");}catch(e){setError(e instanceof Error?e.message:"採用結果を出力できませんでした。");}};
@@ -253,7 +260,7 @@ export default function Home({active=true,view:requestedView,onViewChange,onWork
  <main className="workspace">
  <div className="workspace-topbar" role="toolbar" aria-label="ファイル操作">
   <button className="icon-button mobile-menu-button" aria-label="ファイルと話者のメニュー" aria-expanded={sidebarOpen} onClick={()=>setSidebarOpen(!sidebarOpen)}><Menu size={20}/></button>
-  <div className="heading-actions"><button className="button primary" disabled={loading||mediaExportBusy||(view==="compare"?!comparison:!hasTranscript)} onClick={view==="compare"?saveComparison:()=>setModal("export")}><ArrowDownToLine size={16}/>{view==="compare"?"比較を保存":"保存・書き出し"}</button></div>
+  <div className="heading-actions"><button className="button secondary" disabled={mediaExportBusy} onClick={()=>setModal('terminology')}>用語辞書</button><button className="button secondary" disabled={mediaExportBusy||!cleanupSources.length} onClick={()=>setModal('cleanup')}>字幕を整える</button><button className="button primary" disabled={loading||mediaExportBusy||(view==="compare"?!comparison:!hasTranscript)} onClick={view==="compare"?saveComparison:()=>setModal("export")}><ArrowDownToLine size={16}/>{view==="compare"?"比較を保存":"保存・書き出し"}</button></div>
  </div>
  {downloadFile&&<div className="recent-export"><span>直近の書き出し：<strong>{downloadFile.name}</strong></span><button className="button secondary small" onClick={()=>setModal("download")}><ArrowDownToLine size={14}/>保存方法を開く</button></div>}
  {error&&<div className="error-banner" role="alert"><AlertCircle size={18}/><span>{error}</span><button className="icon-button" aria-label="エラーを閉じる" onClick={()=>setError("")}><X size={16}/></button></div>}
@@ -279,6 +286,8 @@ export default function Home({active=true,view:requestedView,onViewChange,onWork
  {dragging&&<div className="drop-overlay"><div className="drop-modal"><div className="drop-icon"><Upload size={36}/></div><h2>ここにファイルをドロップ</h2><p>VTTは最大3つまで同時に比較できます。編集プロジェクト・動画・音声は1つずつ読み込みます。</p></div></div>}
  {textSelection&&<div className="text-selection-bar" role="region" aria-label="テキストの選択操作" onPointerDown={e=>e.preventDefault()}><strong>{textSelection.characterCount}文字を選択</strong><button className="button secondary small" onClick={openSelectionSpeaker}><UserRound size={15}/>話者を変更</button><button className="button danger small" aria-keyshortcuts="Delete Backspace" title="選択範囲を削除（Delete／Backspace）" onClick={deleteTextSelection}><Trash2 size={15}/>選択範囲を削除</button><button className="icon-button" aria-label="テキストの選択を解除" onClick={()=>{clearSelection();setReviewText([]);setReviewRange(null);}}><X size={16}/></button></div>}
  {toast&&<div className="toast" role="status" onMouseEnter={()=>setToastPaused(true)} onMouseLeave={()=>setToastPaused(false)} onFocus={()=>setToastPaused(true)} onBlur={e=>{if(!e.currentTarget.contains(e.relatedTarget as Node|null))setToastPaused(false);}}><Check size={17}/><span>{toast.text}</span>{toastCanUndo&&<button className="toast-undo" aria-label="直前の編集を元に戻す" onClick={()=>{undo();notify("直前の編集を元に戻しました");}}><Undo2 size={15}/>元に戻す</button>}<button className="icon-button" aria-label="通知を閉じる" onClick={()=>setToast(null)}><X size={14}/></button></div>}
+ {modal==="terminology"&&<TerminologyDialog onClose={()=>setModal(null)}/>}
+ {modal==="cleanup"&&<SubtitleCleanupDialog sources={cleanupSources} onGenerated={addCleanup} onClose={()=>setModal(null)}/>}
  {modal==="correct"&&<TextCorrectionDialog cues={correctionCueIds.map(id=>doc.cueById.get(id)).filter((cue):cue is Cue=>!!cue)} onSave={saveCorrection} onClose={()=>{setModal(null);setError("");}} error={error}/>}
  {modal==="selection-speaker"&&speakerSelection&&<SelectionSpeakerDialog text={speakerSelection.text} speakers={[...new Set([...atoms.map(alias),"話者不明"])]} canChangeFromSelection={new Set(speakerSelection.spans.map(span=>span.cueId)).size===1} onSave={saveSelectionSpeaker} onClose={()=>{setModal(null);setError("");}} error={error}/>}
  {modal==="download"&&downloadFile&&<DownloadResult key={downloadFile.url} file={downloadFile} onClose={()=>setModal(null)}/>}

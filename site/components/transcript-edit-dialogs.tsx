@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Pencil, UserRound } from "lucide-react";
 import { Modal } from "@/components/editor-ui";
+import {correctionPair} from '../src/lib/terminology';
 import { formatTime, type Cue } from "@/src/lib/vtt";
 
 export type TranscriptCorrection = { cueId: string; text: string };
@@ -19,12 +20,13 @@ function useInitialFocus<T extends HTMLElement>() {
 
 export function TextCorrectionDialog({ cues, onSave, onClose, error }: {
   cues: Cue[];
-  onSave: (changes: TranscriptCorrection[]) => void;
+  onSave: (changes: TranscriptCorrection[],learn?:boolean) => void;
   onClose: () => void;
   error?: string;
 }) {
   const [drafts, setDrafts] = useState<Record<string, string>>(() => Object.fromEntries(cues.map(cue => [cue.id, cue.text])));
   const [validationError, setValidationError] = useState("");
+  const [learn,setLearn]=useState(false);
   const firstInput = useInitialFocus<HTMLTextAreaElement>();
   const changes = cues.filter(cue => drafts[cue.id] !== cue.text).map(cue => ({ cueId: cue.id, text: drafts[cue.id] }));
   const save = () => {
@@ -37,7 +39,7 @@ export function TextCorrectionDialog({ cues, onSave, onClose, error }: {
       setValidationError("修正した字幕が長すぎるか、使用できない文字が含まれています。");
       return;
     }
-    try { onSave(changes); }
+    try { onSave(changes,learn); }
     catch (reason) { setValidationError(reason instanceof Error ? reason.message : "字幕を修正できませんでした。"); }
   };
 
@@ -53,7 +55,7 @@ export function TextCorrectionDialog({ cues, onSave, onClose, error }: {
             onChange={event => { setDrafts(previous => ({ ...previous, [cue.id]: event.target.value })); setValidationError(""); }}/>
         </label>)}
       </div>
-      <p className="transcript-edit-subnote">削除済みの文字も含めて表示しています。文字を修正しても、その部分の削除は取り消しません。</p>
+      {changes.some(c=>correctionPair(cues.find(v=>v.id===c.cueId)!.text,c.text))&&<div className="learn-pairs"><label><input type="checkbox" checked={learn} onChange={e=>setLearn(e.target.checked)}/>修正した語句を用語辞書に登録</label>{changes.map(c=>{const pair=correctionPair(cues.find(v=>v.id===c.cueId)!.text,c.text);return pair&&<p key={c.cueId}>{pair.from} → {pair.to}</p>;})}</div>}<p className="transcript-edit-subnote">削除済みの文字も含めて表示しています。文字を修正しても、その部分の削除は取り消しません。</p>
       {(error || validationError) && <p className="field-error" role="alert">{error || validationError}</p>}
     </div>
   </Modal>;

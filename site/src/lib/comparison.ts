@@ -7,6 +7,7 @@ export interface ComparisonSource {
   fileName: string;
   cues: Cue[];
   warnings: string[];
+  generated?: boolean;
 }
 export type SpeakerChoice = { sourceId: string; label: string | null } | { custom: string } | null;
 export interface ComparisonChoice { textSourceId: string | null; speaker: SpeakerChoice }
@@ -41,9 +42,15 @@ export interface ComparisonSummary {
   warnings: string[];
 }
 
-const MAX_SOURCES = 3;
+const MAX_SOURCES = 4;
 const MAX_CUES_PER_SOURCE = 200_000;
 const MAX_JSON_LENGTH = 100 * 1024 * 1024;
+export function putGeneratedSource(session:ComparisonSession,source:ComparisonSource):ComparisonSession{
+ if(!source.generated)throw Error("整理案の種類を確認してください。");
+ const previous=session.sources.find(s=>s.generated);
+ if(previous?.id===session.referenceId)throw Error("元字幕を時間軸の基準にしてから再生成してください。");
+ return addComparisonSources(previous?removeComparisonSource(session,previous.id):session,[source]);
+}
 const forbidden = new Set(["__proto__", "prototype", "constructor"]);
 const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 const own = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
@@ -80,18 +87,20 @@ function cloneCue(value: unknown): Cue {
 }
 function normalizeSource(value: unknown): ComparisonSource {
   if (!record(value)) throw new Error("比較元の形式が正しくありません。");
-  keys(value, ["id", "name", "fileName", "cues", "warnings"], "比較元");
+  keys(value, ["id", "name", "fileName", "cues", "warnings", "generated"], "比較元");
+  if(value.generated!==undefined&&typeof value.generated!=="boolean")throw new Error("整理案の形式が不正です。");
   const id = identifier(value.id, "モデルID");
   const name = boundedText(value.name, 128, "モデル名").trim();
   const fileName = boundedText(value.fileName, 512, "ファイル名");
   if (!Array.isArray(value.cues) || !value.cues.length || value.cues.length > MAX_CUES_PER_SOURCE) throw new Error("比較元は1〜200,000件の字幕を含む必要があります。");
   const cues = buildDocument(value.cues.map(cloneCue)).cues;
   if (!Array.isArray(value.warnings) || value.warnings.length > 100 || value.warnings.some(warning => typeof warning !== "string" || warning.length > 4096)) throw new Error("比較元の読み込みメッセージが正しくありません。");
-  return { id, name, fileName, cues, warnings: [...value.warnings] as string[] };
+  return { id, name, fileName, cues, warnings: [...value.warnings] as string[],...(value.generated?{generated:true}:{}) };
 }
 function normalizeSources(values: unknown): ComparisonSource[] {
-  if (!Array.isArray(values) || values.length < 1 || values.length > MAX_SOURCES) throw new Error("比較できるVTTは最大3つです。");
+  if (!Array.isArray(values) || values.length < 1 || values.length > MAX_SOURCES) throw new Error("元字幕は最大3つ、整理案は1つまでです。");
   const sources = values.map(normalizeSource);
+  if(sources.filter(s=>!s.generated).length>3||sources.filter(s=>s.generated).length>1)throw new Error("元字幕は最大3つ、整理案は1つまでです。");
   if (new Set(sources.map(source => source.id)).size !== sources.length) throw new Error("比較元のモデルIDが重複しています。");
   return sources;
 }

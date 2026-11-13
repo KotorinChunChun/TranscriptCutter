@@ -11,6 +11,22 @@
   color: var(--ink);
 }
 
+.comparison-simple .comparison-row:not(.row-details) .comparison-cue-meta,
+.comparison-simple .comparison-row:not(.row-details) .comparison-speaker-choices,
+.comparison-simple .comparison-row:not(.row-details) .comparison-result-bar,
+.comparison-simple .comparison-model-file,
+.comparison-simple .comparison-model-meta,
+.comparison-simple .comparison-aliases,
+.comparison-simple .comparison-grid-hint,
+.comparison-simple .comparison-bottom-note { display:none; }
+.comparison-simple .comparison-candidate { padding:8px 10px; }
+.comparison-simple .comparison-cue { padding:2px 0; }
+.comparison-simple .comparison-candidate-action { margin-bottom:4px; }
+.comparison-simple .comparison-cue-text { margin:3px 0; }
+.comparison-simple-actions { display:flex;justify-content:flex-end;gap:8px;padding:1px 8px;border-bottom:1px solid #d3e0da; }
+.comparison-simple .comparison-model-header { padding:6px 10px; }
+.comparison-simple .comparison-axis-end { display:none; }
+
 .comparison-workspace-heading,
 .comparison-title,
 .comparison-main-actions,

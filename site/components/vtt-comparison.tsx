@@ -190,6 +190,8 @@ function Candidate({ session, row, source, choice, onChoice, canPlay, onSeek, bu
 
 export function VttComparison({ session, onChange, onAddFiles, onApply, onExportVtt, onSeek, canPlay, busy }: VttComparisonProps) {
   const [query, setQuery] = useState("");
+  const [simple,setSimple]=useState(()=>{try{return localStorage.getItem('tc-comparison-view')!=='detail';}catch{return true;}});
+  const [expanded,setExpanded]=useState<Set<string>>(new Set());
   const [differencesOnly, setDifferencesOnly] = useState(false);
   const [display, setDisplay] = useState({ key: "", count: PAGE_SIZE });
   const [aliasesOpen, setAliasesOpen] = useState(false);
@@ -306,11 +308,11 @@ export function VttComparison({ session, onChange, onAddFiles, onApply, onExport
   const shownRows = filteredRows.slice(0, visibleCount);
   const timelineStyle = { "--comparison-columns": sources.length } as CSSProperties;
 
-  return <section className="vtt-comparison" aria-label="VTT比較" style={timelineStyle}>
+  return <section className={`vtt-comparison${simple?" comparison-simple":""}`} aria-label="VTT比較" style={timelineStyle}>
     <div className="comparison-workspace-heading">
-      <div className="comparison-title"><span className="comparison-heading-icon"><Columns3 size={19}/></span><h2>VTTを比較</h2><span className="comparison-source-count">{sources.length} / 3</span></div>
+      <div className="comparison-title"><span className="comparison-heading-icon"><Columns3 size={19}/></span><h2>VTTを比較</h2><span className="comparison-source-count">{sources.length} / 4</span></div>
       <div className="comparison-main-actions">
-        <button type="button" className="button secondary small" disabled={busy || sources.length >= 3} onClick={onAddFiles} title={sources.length >= 3 ? "比較できるVTTは最大3つです" : "比較するVTTを追加"}><Plus size={14}/>VTTを追加</button>
+        <button type="button" className="button secondary small" disabled={busy || sources.filter(s=>!s.generated).length >= 3} onClick={onAddFiles} title={sources.filter(s=>!s.generated).length >= 3 ? "比較できるVTTは最大3つです" : "比較するVTTを追加"}><Plus size={14}/>VTTを追加</button>
         <button type="button" className="button secondary small" disabled={busy || !summary.cueCount} onClick={onExportVtt}><ArrowDownToLine size={14}/>採用VTTを保存</button>
         <button type="button" className="button primary small" disabled={busy || !summary.cueCount} onClick={onApply}>会話編集に反映<ArrowRight size={14}/></button>
       </div>
@@ -318,7 +320,7 @@ export function VttComparison({ session, onChange, onAddFiles, onApply, onExport
 
     {sources.length === 1 && <div className="comparison-single-source"><Info size={15}/><span>VTTを追加すると、同じ時間軸で字幕と話者を比較できます。</span><button type="button" disabled={busy} onClick={onAddFiles}>ファイルを追加<Plus size={12}/></button></div>}
 
-    <div className="comparison-tools">
+    <div className="comparison-tools"><div className="action-group" role="group" aria-label="比較の表示"><button className="button secondary small" aria-pressed={simple} onClick={()=>{setSimple(true);localStorage.setItem('tc-comparison-view','simple');}}>簡易</button><button className="button secondary small" aria-pressed={!simple} onClick={()=>{setSimple(false);localStorage.setItem('tc-comparison-view','detail');}}>詳細</button></div>
       <label className="comparison-search"><Search size={15}/><input type="search" placeholder="字幕・話者・時刻を検索" value={query} onChange={event => setQuery(event.target.value)} aria-label="比較中の字幕を検索"/>{query && <button type="button" aria-label="検索をクリア" onClick={() => setQuery("")}><X size={13}/></button>}</label>
       <label className="comparison-difference-toggle"><input type="checkbox" checked={differencesOnly} disabled={sources.length < 2} onChange={event => setDifferencesOnly(event.target.checked)}/><span>差分のみ</span></label>
       <div className="comparison-tools-divider"/>
@@ -360,12 +362,12 @@ export function VttComparison({ session, onChange, onAddFiles, onApply, onExport
             const choice = getComparisonChoice(session, row);
             const chosenSource = sources.find(source => source.id === choice.textSourceId);
             const rowTime = formatTime(row.start, true);
-            return <section className={`comparison-row${!choice.textSourceId ? " row-skipped" : ""}`} key={row.id} data-comparison-row={row.id} aria-label={`${rowTime}からの比較区間`}>
+            return <section className={`comparison-row${expanded.has(row.id)?" row-details":""}${!choice.textSourceId ? " row-skipped" : ""}`} key={row.id} data-comparison-row={row.id} aria-label={`${rowTime}からの比較区間`}>
               <div className="comparison-grid">
                 <div className="comparison-time-axis"><button type="button" onClick={() => onSeek(row.start)} disabled={!canPlay || busy} aria-label={`元動画の${rowTime}から再生`}><time>{rowTime}</time><span className="comparison-axis-end">{formatTime(row.end, true)}</span>{canPlay && <span className="comparison-axis-play"><Play size={10}/>再生</span>}</button>{!row.referenceCueId && <span className="comparison-extra-row">基準外の字幕</span>}</div>
                 {sources.map(source => <Candidate key={source.id} session={session} row={row} source={source} choice={choice} onChoice={next => choose(row, next)} canPlay={canPlay} onSeek={onSeek} busy={busy}/>)}
               </div>
-              <div className="comparison-result-bar">
+              {simple&&<div className="comparison-simple-actions"><button className="comparison-text-button" aria-expanded={expanded.has(row.id)} onClick={()=>setExpanded(old=>{const next=new Set(old);if(next.has(row.id))next.delete(row.id);else next.add(row.id);return next;})}>{expanded.has(row.id)?'閉じる':'詳細'}</button><button className="comparison-text-button" disabled={busy||!choice.textSourceId} onClick={()=>choose(row,{...choice,textSourceId:null})}>採用しない</button></div>}<div className="comparison-result-bar">
                 <span className={`comparison-result-state${choice.textSourceId ? " adopted" : ""}`}>{choice.textSourceId ? <Check size={13}/> : <span className="comparison-skip-dot"/>}{choice.textSourceId ? "採用" : "未採用"}</span>
                 <div className="comparison-result-details"><span className="comparison-result-text"><AlignLeft size={12}/>{chosenSource ? <strong>{chosenSource.name}</strong> : <span>字幕なし</span>}</span><span className={`comparison-result-speaker${choice.speaker ? " overridden" : ""}`}><UserRound size={12}/><SpeakerResult session={session} row={row} choice={choice}/></span></div>
                 <div className="comparison-row-actions"><button type="button" className={`comparison-text-button${choice.speaker === null ? " current" : ""}`} disabled={busy || choice.speaker === null} aria-label={`${rowTime}の話者を字幕と同じにする`} onClick={() => choose(row, { ...choice, speaker: null })}><RotateCcw size={11}/>字幕と同じ</button><CustomSpeaker rowTime={rowTime} value={choice.speaker && "custom" in choice.speaker ? choice.speaker.custom : ""} disabled={busy} onCommit={name => choose(row, { ...choice, speaker: { custom: name } })}/><button type="button" className="comparison-text-button comparison-skip-button" disabled={busy || choice.textSourceId === null} onClick={() => choose(row, { ...choice, textSourceId: null })} aria-label={`${rowTime}の区間を採用しない`}><X size={12}/>採用しない</button></div>
