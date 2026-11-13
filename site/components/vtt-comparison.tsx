@@ -347,12 +347,11 @@ export function VttComparison({ session, active, onSample, canSample, onChange, 
     {label:'AI生成',disabled:!session,run:onGenerate},
   ]}/>;
   const header=<div className="comparison-workspace-heading">
-    {!!sources?.length&&<div className="comparison-title"><span className="comparison-heading-icon"><Columns3 size={19}/></span><span className="comparison-source-count">{sources.filter(source=>!source.generated).length}字幕{sources.some(source=>source.generated)&&<>・カスタム1列</>}</span></div>}
     {canPlay?transport:<span className="comparison-media-drop-hint" title="ここに動画(mp4)をドロップして読込">ここに動画(mp4)をドロップして読込</span>}
-    <div className="comparison-primary-actions"><SaveMenu stage={2} active={active} className="button primary small"/><button type="button" className="button primary small" disabled={busy||!summary?.cueCount} onClick={onApply}>会話編集に反映<ArrowRight size={14}/></button></div>
+    <div className="comparison-primary-actions"><SaveMenu stage={2} active={active} className="button primary small"/><button type="button" className="button primary small" disabled={busy||!summary?.cueCount} onClick={onApply}>動画編集へ進む<ArrowRight size={14}/></button></div>
   </div>;
   if (!session || !sources?.length || !summary) return <section className="vtt-comparison comparison-empty-workspace" aria-label="字幕比較">
-    {header}<div className="comparison-drop-content"><span>ここに字幕(vtt)および元にした動画(mp4)をドロップ</span><div className="comparison-empty-actions">{canSample&&<button className="button secondary" disabled={busy} onClick={onSample}>サンプル</button>}{addition}</div></div>
+    {header}<div className="comparison-drop-content"><span>字幕(vtt)・動画(mp4)・プロジェクトをドロップ</span><div className="comparison-empty-actions">{canSample&&<button className="button secondary" disabled={busy} onClick={onSample}>サンプル</button>}{addition}</div></div>
   </section>;
 
   const warnings = [...new Set([...summary.warnings, ...sources.flatMap(source => source.warnings.map(warning => `${source.name}：${warning}`))])];
@@ -429,7 +428,7 @@ export function VttComparison({ session, active, onSample, canSample, onChange, 
 
 
 
-    <div className="comparison-bottom-bar"><div className="comparison-bottom-summary"><div className="comparison-bottom-summary-main"><span className="comparison-bottom-stat"><CheckCheck size={15}/><strong>{summary.cueCount.toLocaleString()}</strong> 字幕を採用</span>{summary.cueCount > 0 && <span className="comparison-end-time"><Scissors size={12}/>採用VTTの終了 <time>{comparisonDisplayTime(adoptedEnd)}</time></span>}</div>{summary.cueCount > 0 && <p className="comparison-bottom-note">会話編集に反映後も、字幕のない末尾は標準で保持します。</p>}<p className="comparison-bottom-note">検索・差分表示にかかわらず、採用した全区間を書き出します。</p></div><button type="button" className="comparison-text-button" disabled={busy || !hasSpeakerOverrides} onClick={resetSpeakers}><RotateCcw size={12}/>すべての話者を字幕に合わせる</button></div>
+    <div className="comparison-bottom-bar"><div className="comparison-bottom-summary"><div className="comparison-bottom-summary-main"><span className="comparison-bottom-stat"><CheckCheck size={15}/><strong>{summary.cueCount.toLocaleString()}</strong> 字幕を採用</span>{summary.cueCount > 0 && <span className="comparison-end-time"><Scissors size={12}/>採用VTTの終了 <time>{comparisonDisplayTime(adoptedEnd)}</time></span>}</div>{summary.cueCount > 0 && <p className="comparison-bottom-note">動画編集へ進む後も、字幕のない末尾は標準で保持します。</p>}<p className="comparison-bottom-note">検索・差分表示にかかわらず、採用した全区間を書き出します。</p></div><button type="button" className="comparison-text-button" disabled={busy || !hasSpeakerOverrides} onClick={resetSpeakers}><RotateCcw size={12}/>すべての話者を字幕に合わせる</button></div>
     {editError&&<p role="alert" className="field-error">{editError}</p>}
     <div className="comparison-live-status" aria-live="polite" aria-atomic="true">{announcement}</div>
   </section>;

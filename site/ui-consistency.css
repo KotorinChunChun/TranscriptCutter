@@ -114,6 +114,19 @@
 .compact-ui .comparison-view-toggle>.button{min-height:32px;padding:4px 10px;border:0;border-radius:19px;background:transparent;color:#315b4d;white-space:nowrap;}
 .compact-ui .comparison-view-toggle>.button[aria-pressed=true]{background:var(--tc-green);color:#fff;box-shadow:0 1px 3px #173c3626;}
 .compact-ui .comparison-view-toggle>.button:focus-visible{outline:2px solid #138ab4;outline-offset:1px;}
+.recognition .setup-card[data-tone] {border-color:#c49a35;}
+.recognition .setup-card[data-tone]>.setup-toggle,.recognition .setup-card[data-tone][data-current=true]>.setup-toggle{background:#fff2bf;color:#604a13;opacity:1;}
+.recognition .setup-card[data-tone] .setup-label>span{color:#705619;}
+.recognition-save-tools{display:flex;justify-content:flex-end;margin:4px 0 8px;}
+.comparison-layout-preview .comparison-axis-heading,.comparison-layout-preview .comparison-speaker-heading{justify-content:flex-start;padding:13px 5px 12px;}
+.comparison-layout-preview .comparison-axis-heading>span,.comparison-layout-preview .comparison-speaker-heading>span{display:block;line-height:26px;color:#243b32;font-weight:600;}
+.comparison-layout-preview .comparison-model-name input{line-height:20px;font-weight:600;color:#243b32;}
+.compact-ui.pane-editor .body-layout{grid-template-columns:minmax(0,1fr);}
+.compact-ui.pane-editor:not(.compare-mode) .sidebar{position:fixed;inset:44px auto 24px 0;width:min(320px,90vw);height:auto;z-index:45;background:#fff;transform:translateX(-110%);visibility:hidden;border-right:1px solid #acc2b8;box-shadow:3px 0 15px #173c3626;}
+.compact-ui.pane-editor:not(.compare-mode) .sidebar.mobile-open{transform:none;visibility:visible;}
+.compact-ui.pane-editor .sidebar-close{display:flex;}
+.compact-ui.pane-editor .sidebar-scrim{display:block;position:fixed;inset:44px 0 24px;z-index:40;background:#173c3659;}
+.compact-ui.pane-editor:not(.compare-mode) .mobile-menu-button{display:inline-flex;flex:0 0 auto;width:auto;white-space:nowrap;}
 @media(max-width:650px){
  .vtt-comparison .comparison-workspace-heading{gap:5px;}
  .vtt-comparison .comparison-workspace-heading:has(.comparison-transport){flex-wrap:wrap;}
