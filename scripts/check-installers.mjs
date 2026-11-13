@@ -6,7 +6,7 @@ import {spawn,execFileSync} from 'node:child_process';
 import {createServer} from 'node:http';
 import {createHash,randomUUID} from 'node:crypto';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..'),{version}=JSON.parse(await readFile(join(root,'package.json'),'utf8'));
-const receipt=JSON.parse(await readFile(join(root,'release',`TranscriptCutter-installers-v${version}.json`),'utf8'));
+const receipt=JSON.parse(await readFile(join(root,'release',`v${version}`,`TranscriptCutter-installers-v${version}.json`),'utf8'));
 const folder=join(root,'runtime','installer-acceptance',randomUUID());await mkdir(folder,{recursive:true});
 const hash=async file=>createHash('sha256').update(await readFile(file)).digest('hex');
 const pause=ms=>new Promise(r=>setTimeout(r,ms));

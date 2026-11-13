@@ -6,14 +6,15 @@ import {createHash} from 'node:crypto';
 import {build} from 'esbuild';
 import {rcedit} from 'rcedit';
 import {inject} from 'postject';
+import {prepareReleaseDirectory,pruneObsoleteReleases} from './release-layout.mjs';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 process.chdir(root);
 if(process.platform!=='win32'||process.arch!=='x64'||!process.version.startsWith('v22.'))throw Error('Windows x64 / Node.js 22でビルドしてください。');
 const {version}=JSON.parse(await readFile(resolve(root,'package.json'),'utf8'));
-const work=resolve(root,'runtime','standalone-build'),out=resolve(root,'release',`TranscriptCutter-web-v${version}.exe`);
+const release=await prepareReleaseDirectory(root,version);
+const work=resolve(root,'runtime','standalone-build'),out=resolve(release,`TranscriptCutter-web-v${version}.exe`);
 await mkdir(work,{recursive:true});await mkdir(dirname(out),{recursive:true});
-try{await access(out);const backup=resolve(root,'release','history',new Date().toISOString().replace(/[:.]/g,'-'));await mkdir(backup,{recursive:true});for(const path of [out,out+'.json']){try{await copyFile(path,resolve(backup,path.split(/[\\/]/).at(-1)));}catch(error){if(error.code!=='ENOENT')throw error;}}}catch(error){if(error.code!=='ENOENT')throw error;}
 execFileSync(process.execPath,[resolve(root,'scripts/build-web.mjs')],{stdio:'inherit'});
 const assets={};for(const name of ['index.html','app.js','app.css','browser-whisper-worker.js'])assets['/'+name]=(await readFile(resolve(root,'dist-web',name))).toString('base64');
 let licenses='TranscriptCutter Web '+version+'\n\nNode.js source: https://nodejs.org/download/release/'+process.version+'/\n';
@@ -21,7 +22,7 @@ const lock=JSON.parse(await readFile(resolve(root,'package-lock.json'),'utf8'));
 const components=[['Node.js',resolve(dirname(process.execPath),'LICENSE')],...['react','react-dom','scheduler','lucide-react','mediabunny','@noble/hashes'].map(name=>[name,resolve(root,'node_modules',name,'LICENSE')])];
 for(const [name,path] of components){const pkg=lock.packages['node_modules/'+name];licenses+='\n===== '+name+(pkg?' '+pkg.version+'\nSource: '+pkg.resolved:'')+' =====\n'+await readFile(path,'utf8')+'\n';}
 assets['/licenses.txt']=Buffer.from(licenses).toString('base64');
-await writeFile(resolve(root,'release',`TranscriptCutter-licenses-v${version}.txt`),licenses);
+await writeFile(resolve(release,`TranscriptCutter-licenses-v${version}.txt`),licenses);
 const entry=`import {startStandalone} from ${JSON.stringify(resolve(root,'scripts/standalone-web.mjs'))};
 import {runServerSupervisor} from ${JSON.stringify(resolve(root,'scripts/bundled-server.mjs'))};
 const assets=new Map(Object.entries(${JSON.stringify(assets)}).map(([path,body])=>[path,Buffer.from(body,'base64')]));
@@ -45,5 +46,6 @@ await inject(out,'NODE_SEA_BLOB',await readFile(blob),{sentinelFuse:'NODE_SEA_FU
 const binary=await readFile(out);
 const gitCommit=execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),sourceDirty=execFileSync('git',['status','--porcelain','--untracked-files=no'],{encoding:'utf8'}).trim()!=='';
 const receipt={version,gitCommit,sourceDirty,node:process.version,platform:'win32-x64',file:out,bytes:binary.length,sha256:createHash('sha256').update(binary).digest('hex'),assets:Object.fromEntries(Object.entries(assets).map(([path,base64])=>[path,createHash('sha256').update(Buffer.from(base64,'base64')).digest('hex')]))};
-await writeFile(resolve(root,'release',`TranscriptCutter-web-v${version}.exe.json`),JSON.stringify(receipt,null,2)+'\n');
+await writeFile(resolve(release,`TranscriptCutter-web-v${version}.exe.json`),JSON.stringify(receipt,null,2)+'\n');
+await pruneObsoleteReleases(root,version);
 console.log(JSON.stringify(receipt,null,2));

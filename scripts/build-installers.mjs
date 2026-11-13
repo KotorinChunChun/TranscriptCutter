@@ -3,6 +3,7 @@ import {resolve,join,dirname,relative} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
+import {prepareReleaseDirectory,pruneObsoleteReleases} from './release-layout.mjs';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const {version}=JSON.parse(await readFile(join(root,'package.json'),'utf8'));
 const compiler=process.env.TC_ISCC||'C:/develop/Services/runtime/inno-setup-6.7.3/compiler/ISCC.exe';await access(compiler);
@@ -12,11 +13,12 @@ if(serverBuild.distribution!=='program-only'||serverBuild.sourceDirty!==false||s
 const hash=async path=>createHash('sha256').update(await readFile(path)).digest('hex');
 const serverSha256=await hash(join(serverRoot,'TranscriptionServer.exe'));
 if(serverBuild.version!=='0.1.10'||serverBuild.gitCommit!=='8ddfab7b95288a3b11e75735e839471c3b53a09e'||serverSha256!=='2cc4894b9c71b27d6cff3a67945c65bf3679998d7263ab82323ac2a7a8f985fe')throw Error('確定したTranscriptionServer v0.1.10と一致しません。');
-const exe=join(root,'release',`TranscriptCutter-web-v${version}.exe`),exeReceipt=JSON.parse(await readFile(exe+'.json','utf8'));
+const release=await prepareReleaseDirectory(root,version);
+const exe=join(release,`TranscriptCutter-web-v${version}.exe`),exeReceipt=JSON.parse(await readFile(exe+'.json','utf8'));
 if(await hash(exe)!==exeReceipt.sha256||exeReceipt.version!==version||exeReceipt.sourceDirty!==false)throw Error('コミット済みの一致するEXEを先に生成してください。');
 const gitCommit=execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();
 if(gitCommit!==exeReceipt.gitCommit||execFileSync('git',['status','--porcelain','--untracked-files=no'],{cwd:root,encoding:'utf8'}).trim())throw Error('配布用ソースをコミットしてからEXEとインストーラーを生成してください。');
-const stamp=new Date().toISOString().replace(/[:.]/g,'-'),work=join(root,'runtime','installer-build',stamp),release=join(root,'release');
+const stamp=new Date().toISOString().replace(/[:.]/g,'-'),work=join(root,'runtime','installer-build',stamp);
 await mkdir(work,{recursive:true});const processOwner=join(work,'TranscriptCutterProcess.exe');
 const resource=join(work,'owner.res'),rc=join(work,'owner.rc'),manifest=join(work,'owner.manifest');
 await writeFile(manifest,'<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0"><trustInfo xmlns="urn:schemas-microsoft-com:asm.v3"><security><requestedPrivileges><requestedExecutionLevel level="asInvoker" uiAccess="false"/></requestedPrivileges></security></trustInfo></assembly>');
@@ -34,10 +36,10 @@ for(const all of [false,true]){
  const files={};async function inventory(dir){for(const entry of await readdir(dir,{withFileTypes:true})){const path=join(dir,entry.name);if(entry.isSymbolicLink())throw Error('配布にリンクは含めません。');if(entry.isDirectory())await inventory(path);else{const rel=relative(stage,path).replaceAll('\\','/');if(/(?:^|\/)(?:models?|runtime|data|settings|__pycache__|\.git)(?:\/|$)/i.test(rel)||/\.(?:mp4|wav|vtt|sqlite|db|gguf|bin|pth|pt|onnx|key)$/i.test(rel)||/(?:ffmpeg|ffprobe|python)\.exe$/i.test(rel))throw Error('プログラム以外の配布候補: '+rel);files[rel]={sha256:await hash(path),bytes:(await readFile(path)).length};}}}
  await inventory(stage);await writeFile(join(stage,'配布ファイル.json'),JSON.stringify({product:'TranscriptCutter',version,variant:all?'all-in-one':'normal',gitCommit:exeReceipt.gitCommit,server:all?bundle:undefined,files},null,2)+'\n');
  const output=join(release,`TranscriptCutter-${all?'AllInOne-':''}Setup-v${version}.exe`);
- try{await access(output);const archive=join(release,'history',stamp);await mkdir(archive,{recursive:true});await copyFile(output,join(archive,output.split(/[\\/]/).at(-1)));}catch(error){if(error.code!=='ENOENT')throw error;}
  execFileSync(compiler,[`/DVersion=${version}`,`/DSourceDir=${stage}`,`/DOutputDir=${release}`,...(all?['/DAllInOne=1']:[]),join(root,'packaging','TranscriptCutter.iss')],{stdio:'inherit'});
  artifacts.push({file:output,stage,sha256:await hash(output),bytes:(await readFile(output)).length,files:Object.keys(files).length});
 }
 await writeFile(join(release,`TranscriptCutter-installers-v${version}.json`),JSON.stringify({version,gitCommit:exeReceipt.gitCommit,exe:exeReceipt,server:bundle,artifacts},null,2)+'\n');
 await writeFile(join(release,`TranscriptCutter-SHA256-v${version}.txt`),[`${exeReceipt.sha256}  ${exe.split(/[\\/]/).at(-1)}`,...artifacts.map(a=>`${a.sha256}  ${a.file.split(/[\\/]/).at(-1)}`)].join('\n')+'\n');
+await pruneObsoleteReleases(root,version);
 console.log(JSON.stringify(artifacts,null,2));

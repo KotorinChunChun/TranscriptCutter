@@ -15,13 +15,12 @@ try {
     foreach($name in @('serve-web.mjs','standalone-web.mjs','speech-connection.mjs','bundled-server.mjs','codex-cleanup.mjs','Start-Web.ps1','benchmark-models.mjs','compare-benchmark-text.mjs')){Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $stage 'scripts')}
     New-Item -ItemType Directory -Path (Join-Path $stage 'web') -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $taskRoot 'web/transcript-utils.mjs') -Destination (Join-Path $stage 'web')
-    $destination=Join-Path $taskRoot "release/TranscriptCutter-web-v$version.zip"
+    $releaseDirectory=& node (Join-Path $PSScriptRoot 'release-layout.mjs') --prepare
+    if($LASTEXITCODE -ne 0){throw '配布先の準備に失敗しました。'}
+    $destination=Join-Path $releaseDirectory "TranscriptCutter-web-v$version.zip"
     New-Item -ItemType Directory -Path (Split-Path $destination -Parent) -Force | Out-Null
-    if(Test-Path -LiteralPath $destination){
-        $archive=Join-Path $taskRoot ('release/history/'+[DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss-fffffff'))
-        New-Item -ItemType Directory -Path $archive -Force | Out-Null
-        Copy-Item -LiteralPath $destination -Destination $archive
-    }
     Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $destination -Force
     Get-FileHash -Algorithm SHA256 -LiteralPath $destination
+    & node (Join-Path $PSScriptRoot 'release-layout.mjs') --prune
+    if($LASTEXITCODE -ne 0){throw '旧配布物の整理に失敗しました。'}
 } finally { Pop-Location }

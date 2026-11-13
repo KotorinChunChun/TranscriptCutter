@@ -10,7 +10,7 @@ const {version}=JSON.parse(await readFile(resolve(root,'package.json'),'utf8'));
 const folder=resolve(root,'runtime','standalone-acceptance',randomUUID(),'日本語 空白フォルダー');
 await mkdir(folder,{recursive:true});
 const name=`TranscriptCutter-web-v${version}.exe`,exe=join(folder,name);
-await copyFile(resolve(root,'release',name),exe);
+await copyFile(resolve(root,'release',`v${version}`,name),exe);
 const env={...process.env,PATH:join(process.env.SystemRoot,'System32')+';'+process.env.SystemRoot,TC_WEB_PORT:'0',TC_WEB_STATE_DIR:resolve(folder,'..','state'),TC_TRANSCRIPTION_TOKEN:''};
 assert.equal(execFileSync(exe,['--version'],{cwd:folder,env,encoding:'utf8'}).trim(),`TranscriptCutter Web v${version}`);
 const calls=[],id='a'.repeat(32);
@@ -36,7 +36,7 @@ try{
   child.stderr.on('data',chunk=>{output+=chunk;});
   child.stdout.on('data',chunk=>{output+=chunk;const match=output.match(/http:\/\/127\.0\.0\.1:\d+\//);if(match){clearTimeout(timeout);resolve(match[0]);}});
  });
- const receipt=JSON.parse(await readFile(resolve(root,'release',name+'.json'),'utf8'));
+ const receipt=JSON.parse(await readFile(resolve(root,'release',`v${version}`,name+'.json'),'utf8'));
  for(const [path,expected] of Object.entries(receipt.assets)){
   const response=await fetch(new URL(path,base));assert.equal(response.status,200);
   const body=Buffer.from(await response.arrayBuffer());assert.equal(createHash('sha256').update(body).digest('hex'),expected);
