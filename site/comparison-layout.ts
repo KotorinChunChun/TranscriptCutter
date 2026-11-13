@@ -5,3 +5,7 @@ export function comparisonFileName(names:readonly string[]){
  prefix=prefix.replace(/[<>:"/\\|?*\u0000-\u001f]/g,'_').replace(/[\s_.-]+$/g,'');
  return `${Array.from(prefix||'vtt').slice(0,120).join('')}_比較.compare.json`;
 }
+export function comparisonDisplayTime(milliseconds:number):string {
+  const total=Math.floor(Math.max(0,milliseconds)/1000),hours=Math.floor(total/3600),minutes=Math.floor(total%3600/60),seconds=String(total%60).padStart(2,'0');
+  return hours?`${hours}:${String(minutes).padStart(2,'0')}:${seconds}`:`${minutes}:${seconds}`;
+}

@@ -17,6 +17,7 @@ const {
   exportComparisonJson, importComparisonJson,
   toggleComparisonText, getComparisonSkippedRanges,
   createEditableComparison, adoptComparisonChoice, editComparisonCue,
+  adoptAllComparisonText,
 } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`);
 
 const cue = (id, text, start, end, speaker = "話者1") => ({ id, text, start, end, speaker, sourceIds: [id], sourceCount: 1 });
@@ -41,11 +42,14 @@ test("editable columns: adoption copies original cues, edited output and blank c
   session=importComparisonJson(exportComparisonJson(session));rows=buildComparisonRows(session);
   assert.equal(getSelectedCues(session)[0].text,'編集済みの本文');
   assert.equal(session.sources[0].cues[0].text,'元の本文');
+  const all=adoptAllComparisonText(session,'a',true);
+  assert.equal(getSelectedCues(all)[0].text,'元の本文');
+  assert.equal(all.sources.find(source=>source.editable).cues.length,2);
   session=adoptComparisonChoice(session,rows[0],toggleComparisonText(session,rows[0],'b',true));
   assert.equal(getComparisonChoice(session,rows[0]).textSourceId,null);
   for(const row of buildComparisonRows(session)){const item=row.candidates[custom.id][0];if(item)session=editComparisonCue(session,row,custom.id,item.id,'');}
   assert.deepEqual(getSelectedCues(importComparisonJson(exportComparisonJson(session))),[]);
-  assert.equal(session.sources.find(source=>source.editable).cues.length,0);
+  assert.equal(session.sources.find(source=>source.editable).cues.every(cue=>!cue.text.trim()),true);
 });
 
 test("editable columns: AI initial values use the single fourth slot and editing preserves cue timestamps",()=>{
@@ -61,6 +65,9 @@ test("editable columns: AI initial values use the single fourth slot and editing
   session=createEditableComparison(session,{...model('ai2',[cue('ai2','再生成',0,4000)]),generated:true});
   assert.equal(session.sources.length,4);
   assert.equal(session.sources.filter(source=>source.editable).length,1);
+  const invalid=JSON.parse(exportComparisonJson(session));
+  invalid.sources.find(source=>source.editable).anchors={};
+  assert.throws(()=>importComparisonJson(JSON.stringify(invalid)),/行対応/);
 });
 
 test("comparison playback: toggling adoption permits zero choices and follows the adopted speaker", () => {

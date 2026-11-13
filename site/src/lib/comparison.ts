@@ -75,10 +75,10 @@ function identifier(value: unknown, label: string): string {
 function keys(value: Record<string, unknown>, allowed: readonly string[], label: string): void {
   if (Object.keys(value).some(key => forbidden.has(key) || !allowed.includes(key))) throw new Error(`${label}に対応していない項目があります。`);
 }
-function cloneCue(value: unknown): Cue {
+function cloneCue(value: unknown, allowEmpty=false): Cue {
   if (!record(value)) throw new Error("比較元の字幕形式が正しくありません。");
   const id = identifier(value.id, "字幕ID");
-  if (typeof value.start !== "number" || typeof value.end !== "number" || typeof value.text !== "string" || value.text.length > 2_000_000 || !value.text.trim()) throw new Error("比較元の字幕の時刻・本文が正しくありません。");
+  if (typeof value.start !== "number" || typeof value.end !== "number" || typeof value.text !== "string" || value.text.length > 2_000_000 || !allowEmpty&&!value.text.trim()) throw new Error("比較元の字幕の時刻・本文が正しくありません。");
   const speaker = value.speaker === null ? null : boundedText(value.speaker, 512, "話者名", true);
   if (!Array.isArray(value.sourceIds) || value.sourceIds.length > MAX_CUES_PER_SOURCE || value.sourceIds.some(id => typeof id !== "string" || id.length > 4096)) throw new Error("比較元の字幕参照が正しくありません。");
   if (!Number.isSafeInteger(value.sourceCount) || Number(value.sourceCount) < 1 || Number(value.sourceCount) > MAX_CUES_PER_SOURCE) throw new Error("比較元の字幕数が正しくありません。");
@@ -96,7 +96,7 @@ function normalizeSource(value: unknown): ComparisonSource {
   const name = boundedText(value.name, 128, "モデル名").trim();
   const fileName = boundedText(value.fileName, 512, "ファイル名");
   if (!Array.isArray(value.cues) || (!value.cues.length&&!value.editable) || value.cues.length > MAX_CUES_PER_SOURCE) throw new Error("比較元の字幕数を確認してください。");
-  const cues = buildDocument(value.cues.map(cloneCue)).cues;
+  const cues = buildDocument(value.cues.map(cue=>cloneCue(cue,!!value.editable))).cues;
   const anchors=dictionary<string>();
   if(value.editable){if(!record(value.anchors)||Object.keys(value.anchors).length!==cues.length)throw Error("編集列の行対応が不正です。");const cueIds=new Set(cues.map(cue=>cue.id));for(const cue of cues){anchors[cue.id]=boundedText(value.anchors[cue.id],4096,"編集行ID");}if(Object.keys(value.anchors).some(id=>forbidden.has(id)||!cueIds.has(id)))throw Error("編集列に不明な字幕があります。");}
   else if(value.anchors!==undefined)throw Error("元字幕に編集行対応は設定できません。");
@@ -279,12 +279,25 @@ export function editComparisonCue(session:ComparisonSession,row:ComparisonRow,so
   const source=session.sources.find(source=>source.id===sourceId&&source.editable);if(!source)throw Error('編集するカスタム列がありません。');
   const current=row.candidates[sourceId]??[],cue=cueId?current.find(cue=>cue.id===cueId):undefined;
   if(cueId&&!cue)throw Error('編集する字幕が見つかりません。');
-  const fallback=current[0]??row.candidates[session.referenceId]?.[0];
+  const fallback=current[0]??row.candidates[session.referenceId]?.[0]??session.sources.filter(source=>!source.generated).flatMap(source=>row.candidates[source.id]??[])[0];
   const updated:Cue={...(cue??{id:crypto.randomUUID(),start:row.start,end:row.end,speaker:fallback?.speaker??null,sourceIds:[],sourceCount:1}),text,isMultiVoice:undefined,voicePayload:undefined};
-  const cues=cue?current.flatMap(item=>item.id===cue.id?(text.trim()?[updated]:[]):[item]):text.trim()?[updated]:[];
+  const cues=cue?current.map(item=>item.id===cue.id?updated:item):[updated];
   const result=writeEditableRow(session,row,source,cues),choice=getComparisonChoice(session,row);
-  return {...result,choices:{...result.choices,[row.id]:cues.length?{textSourceId:choice.textSourceId??source.id,outputSourceId:source.id,speaker:null}:{textSourceId:null,speaker:null}}};
+  return {...result,choices:{...result.choices,[row.id]:cues.some(cue=>cue.text.trim())?{textSourceId:choice.textSourceId??source.id,outputSourceId:source.id,speaker:null}:{textSourceId:null,speaker:null}}};
 }
+
+export function adoptAllComparisonText(session:ComparisonSession,sourceId:string,followSpeaker:boolean):ComparisonSession {
+  const source=session.sources.find(source=>source.id===sourceId);if(!source)throw Error('採用する字幕がありません。');
+  const rows=buildComparisonRows(session),editable=session.sources.find(source=>source.editable);
+  const copied:Cue[]=[],anchors=dictionary<string>(),choices=dictionary<ComparisonChoice>();
+  for(const row of rows){const candidates=(row.candidates[sourceId]??[]).filter(cue=>cue.text.trim()),previous=getComparisonChoice(session,row);let speaker=followSpeaker?null:previous.speaker;
+    if(speaker&&'sourceId' in speaker&&speaker.sourceId===editable?.id&&speaker.label)speaker={custom:rawSpeakerAlias(session,editable.id,speaker.label)};
+    choices[row.id]={textSourceId:candidates.length?sourceId:null,speaker};
+    if(editable&&!source.generated&&candidates.length){choices[row.id].outputSourceId=editable.id;for(const cue of candidates){const copy={...cue,id:crypto.randomUUID()};copied.push(copy);anchors[copy.id]=row.id;}}
+  }
+  return {...session,choices,...(editable&&!source.generated?{sources:session.sources.map(source=>source.id===editable.id?{...source,cues:copied,anchors}:source),speakerAliases:{...session.speakerAliases,[editable.id]:{}}}:{})};
+}
+function rawSpeakerAlias(session:ComparisonSession,sourceId:string,label:string){return session.speakerAliases[sourceId]?.[label]||label;}
 
 /** Only explicit exclusions skip time; overlapping adopted speech stays audible. */
 export function getComparisonSkippedRanges(session: ComparisonSession): { start: number; end: number }[] {
@@ -298,7 +311,7 @@ export function getComparisonSkippedRanges(session: ComparisonSession): { start:
     }
     return result;
   };
-  const kept=merge(rows.flatMap(row=>{const choice=getComparisonChoice(session,row),id=choice.outputSourceId??choice.textSourceId;return id?(row.candidates[id]??[]).map(c=>({start:c.start,end:c.end})):[];}));
+  const kept=merge(rows.flatMap(row=>{const choice=getComparisonChoice(session,row),id=choice.outputSourceId??choice.textSourceId;return id?(row.candidates[id]??[]).filter(cue=>cue.text.trim()).map(c=>({start:c.start,end:c.end})):[];}));
   const excluded=merge(rows.filter(row=>own(session.choices,row.id)&&session.choices[row.id].textSourceId===null).map(row=>({start:row.start,end:row.end})));
   const result: {start:number;end:number}[]=[];
   let index=0;
@@ -353,7 +366,7 @@ function selectedItems(session: ComparisonSession, rows: readonly ComparisonRow[
     if (choice.textSourceId === null) continue;
     const effectiveSourceId=choice.outputSourceId??choice.textSourceId;
     const source = sourceById.get(effectiveSourceId);
-    const candidates = row.candidates[effectiveSourceId];
+    const candidates = row.candidates[effectiveSourceId]?.filter(cue=>cue.text.trim());
     if (!source || !candidates?.length) throw new Error("採用する字幕が比較区間にありません。採用元を選び直してください。");
     selectedRowCount += 1;
     for (const original of candidates) {
@@ -471,9 +484,9 @@ function validateSession(value: unknown): ComparisonSession {
     if (forbidden.has(id) || !row || !record(rawChoice)) throw new Error("比較の採用設定に存在しない区間があります。");
     keys(rawChoice, ["textSourceId", "speaker", "outputSourceId"], "採用設定");
     const textSourceId = rawChoice.textSourceId;
-    if (textSourceId !== null && (typeof textSourceId !== "string" || !row.candidates[textSourceId]?.length)) throw new Error("比較区間に存在しない字幕が採用されています。");
+    if (textSourceId !== null && (typeof textSourceId !== "string" || !row.candidates[textSourceId]?.some(cue=>cue.text.trim()))) throw new Error("比較区間に存在しない字幕が採用されています。");
     const output=rawChoice.outputSourceId;
-    if(output!==undefined&&(typeof output!=="string"||textSourceId===null||!sources.some(source=>source.id===output&&source.editable)||!row.candidates[output]?.length))throw Error("採用する編集列が正しくありません。");
+    if(output!==undefined&&(typeof output!=="string"||textSourceId===null||!sources.some(source=>source.id===output&&source.editable)||!row.candidates[output]?.some(cue=>cue.text.trim())))throw Error("採用する編集列が正しくありません。");
     session.choices[id] = { textSourceId: textSourceId as string | null, speaker: normalizeSpeaker(rawChoice.speaker, sourceSpeakers),...(typeof output==='string'?{outputSourceId:output}:{}) };
   }
   return session;
