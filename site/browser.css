@@ -21,3 +21,4 @@ html,body{height:100%;overflow:hidden}
 #root{height:100%}
 
 .setup-column{container-type:inline-size}@container(max-width:620px){.range-fields{grid-template-columns:auto minmax(0,1fr)}.range-fields label{white-space:nowrap}}.recognition .media-drop{display:block;width:100%;box-sizing:border-box;min-height:64px;padding:12px;border:2px dashed #7ca99b;background:#fff;color:#315b4d;text-align:center}.media-drop[aria-disabled=true]{opacity:.5}.subtitle-paste textarea{width:100%;box-sizing:border-box;min-height:140px}.subtitle-paste button{margin:4px 0}.sidebar-upload{box-sizing:border-box}
+.workflow .workflow-brand{background:transparent;border:0;border-radius:0;padding:0;font-weight:700;color:inherit}.workflow .workflow-brand:disabled{opacity:.5;cursor:default}.workflow .workflow-brand:focus-visible{outline:2px solid currentColor;outline-offset:4px}

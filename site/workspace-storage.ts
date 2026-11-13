@@ -2,19 +2,23 @@ import {useEffect,useLayoutEffect,useState} from 'react';
 
 type SavedRecord={key:string;version:1;data:unknown;assetId:string|null};
 type SavedAsset={id:string;blob:Blob;name:string;type:string;lastModified:number};
-const records=new Map<string,SavedRecord>(),files=new Map<string,File>(),fileIds=new WeakMap<File,string>();
+const records=new Map<string,SavedRecord>(),files=new Map<string,File>();
+let fileIds=new WeakMap<File,string>();
 const listeners=new Set<()=>void>();
-let database:IDBDatabase|null=null,problem='',pending=0,failures=0;
+let database:IDBDatabase|null=null,problem='',pending=0,failures=0,resetting=false;
 const notify=()=>{for(const listener of listeners)listener();};
 const fail=(reason:unknown)=>{failures++;problem=`作業状態を保存・復元できません。タブを閉じる前に編集プロジェクトを保存してください。${reason instanceof Error?reason.message:String(reason)}`;notify();};
 const request=<T>(req:IDBRequest<T>)=>new Promise<T>((resolve,reject)=>{req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});
+async function openDatabase(){
+ const open=indexedDB.open('transcript-cutter-workspace',1);
+ open.onupgradeneeded=()=>{open.result.createObjectStore('records',{keyPath:'key'});open.result.createObjectStore('assets',{keyPath:'id'});};
+ return request(open);
+}
 
 /** Hydrate before mounting React: empty initial renders must never replace a saved project. */
 export async function initializeWorkspaceStorage(){
  try{
-  const open=indexedDB.open('transcript-cutter-workspace',1);
-  open.onupgradeneeded=()=>{open.result.createObjectStore('records',{keyPath:'key'});open.result.createObjectStore('assets',{keyPath:'id'});};
-  database=await request(open);
+  database=await openDatabase();
   database.onversionchange=()=>{database?.close();database=null;fail('保存領域が更新されました。再読み込みしてください。');};
   const tx=database.transaction(['records','assets'],'readonly');
   const rows=await request(tx.objectStore('records').getAll()) as SavedRecord[];
@@ -36,7 +40,7 @@ export function workspaceRestoreError(error:unknown){database?.close();database=
 
 /** The record and a newly attached media blob commit atomically. No base64 copies. */
 export function saveWorkspace(key:string,data:unknown,file:File|null=null){
- if(!database)return;
+ if(!database||resetting)return;
  try{
   let assetId=file?fileIds.get(file):null;
   if(file&&!assetId)assetId=crypto.randomUUID();
@@ -59,6 +63,26 @@ export function saveWorkspace(key:string,data:unknown,file:File|null=null){
   tx.oncomplete=()=>{records.set(key,row);pending--;notify();};
   tx.onabort=()=>{pending--;fail(tx.error??Error('ブラウザーの空き容量を確認してください。'));};
  }catch(error){fail(error);}
+}
+/** Clear only this app's resume data, after all earlier writes in this database. */
+export async function resetWorkspaceStorage(){
+ if(resetting)throw Error('リセット中です。');
+ resetting=true;pending++;notify();
+ let navigation:string|null=null,navigationChanged=false;
+ try{
+  navigation=localStorage.getItem('tc-workspace-navigation');
+  localStorage.removeItem('tc-workspace-navigation');navigationChanged=true;
+  database??=await openDatabase();
+  await new Promise<void>((resolve,reject)=>{
+   const tx=database!.transaction(['records','assets'],'readwrite');
+   tx.objectStore('records').clear();tx.objectStore('assets').clear();
+   tx.oncomplete=()=>resolve();tx.onabort=()=>reject(tx.error??Error('作業データをリセットできませんでした。'));
+  });
+  records.clear();files.clear();fileIds=new WeakMap();problem='';
+ }catch(error){
+  if(navigationChanged){try{if(navigation===null)localStorage.removeItem('tc-workspace-navigation');else localStorage.setItem('tc-workspace-navigation',navigation);}catch{/* Report the original reset failure. */}}
+  fail(error);throw error;
+ }finally{resetting=false;pending--;notify();}
 }
 export function useWorkspaceSave(key:string,data:unknown,file:File|null=null){
  useLayoutEffect(()=>{saveWorkspace(key,data,file);},[key,data,file]);
@@ -89,7 +113,7 @@ export function restoreNavigation():Navigation{
  }catch{/* An invalid preference cannot prevent opening the app. */}
  return {stage:1,view:'chat'};
 }
-export function saveNavigation(stage:number,view:string){try{localStorage.setItem('tc-workspace-navigation',JSON.stringify({stage,view}));}catch(error){fail(error);}}
+export function saveNavigation(stage:number,view:string){if(resetting)return;try{localStorage.setItem('tc-workspace-navigation',JSON.stringify({stage,view}));}catch(error){fail(error);}}
 
 /** An opaque browser-session identifier, never a server key or operation token. */
 export function speechSessionClientId(){

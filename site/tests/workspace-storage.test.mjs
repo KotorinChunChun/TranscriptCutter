@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {restoreNavigation,saveNavigation,speechSessionClientId} from '../workspace-storage.ts';
+import {restoreNavigation,saveNavigation,speechSessionClientId,resetWorkspaceStorage} from '../workspace-storage.ts';
 import {SpeechClient} from '../speech-client.ts';
 
 test('reload restores each stage and the editor VTT subtab; hidden comparison cannot steal stage one',()=>{
@@ -36,4 +36,19 @@ test('unavailable browser preference storage does not prevent opening the app',(
  globalThis.localStorage=unavailable;globalThis.sessionStorage=unavailable;
  try{assert.deepEqual(restoreNavigation(),{stage:1,view:'chat'});assert.doesNotThrow(()=>saveNavigation(3,'chat'));assert.match(speechSessionClientId(),/^[a-f0-9-]{36}$/);}
  finally{globalThis.localStorage=originalLocal;globalThis.sessionStorage=originalSession;}
+});
+
+test('a failed workspace reset restores navigation and preserves unrelated preferences',async()=>{
+ const originalLocal=globalThis.localStorage,originalDatabase=globalThis.indexedDB;
+ const navigation=JSON.stringify({stage:3,view:'vtt'}),preferences='existing model and connection preferences';
+ const values=new Map([['tc-workspace-navigation',navigation],['speech-preferences',preferences]]);
+ globalThis.localStorage={getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,value),removeItem:key=>values.delete(key)};
+ globalThis.indexedDB={open(){throw Error('database unavailable');}};
+ try{
+  await assert.rejects(resetWorkspaceStorage(),/database unavailable/);
+  assert.equal(values.get('tc-workspace-navigation'),navigation);
+  assert.equal(values.get('speech-preferences'),preferences);
+  // A failure also releases the reset lock so a subsequent attempt is possible.
+  await assert.rejects(resetWorkspaceStorage(),/database unavailable/);
+ }finally{globalThis.localStorage=originalLocal;globalThis.indexedDB=originalDatabase;}
 });
