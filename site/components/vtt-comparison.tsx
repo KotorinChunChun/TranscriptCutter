@@ -353,14 +353,12 @@ export function VttComparison({ session, onChange, onAddFiles, onGenerate, onApp
   return <section className={`vtt-comparison comparison-layout-preview${simple?" comparison-simple":""}`} aria-label="字幕比較" style={timelineStyle}>
     <div className="comparison-workspace-heading">
       <div className="comparison-title"><span className="comparison-heading-icon"><Columns3 size={19}/></span><h2>字幕比較</h2><span className="comparison-source-count">{sources.filter(source=>!source.generated).length}字幕{sources.some(source=>source.generated)&&<>・カスタム1列</>}</span></div>
-      {canPlay&&transport}
+      {canPlay?transport:<span className="comparison-media-drop-hint">ここに動画(mp4)をドロップして読込</span>}
       {actionTarget?createPortal(<div className="comparison-main-actions">
         <button type="button" className="button secondary small" disabled={busy || sources.filter(s=>!s.generated).length >= 3} onClick={onAddFiles} title={sources.filter(s=>!s.generated).length >= 3 ? "比較できるVTTは最大3つです" : "比較するVTTを追加"}><Plus size={14}/>VTTを追加</button>
-        <button type="button" className="button secondary small" disabled={busy} onClick={onExportVtt}><ArrowDownToLine size={14}/>採用VTTを保存</button>
         <button type="button" className="button primary small" disabled={busy || !summary.cueCount} onClick={onApply}>会話編集に反映<ArrowRight size={14}/></button>
       </div>,actionTarget):<div className="comparison-main-actions">
         <button type="button" className="button secondary small" disabled={busy || sources.filter(s=>!s.generated).length >= 3} onClick={onAddFiles} title={sources.filter(s=>!s.generated).length >= 3 ? "比較できるVTTは最大3つです" : "比較するVTTを追加"}><Plus size={14}/>VTTを追加</button>
-        <button type="button" className="button secondary small" disabled={busy} onClick={onExportVtt}><ArrowDownToLine size={14}/>採用VTTを保存</button>
         <button type="button" className="button primary small" disabled={busy || !summary.cueCount} onClick={onApply}>会話編集に反映<ArrowRight size={14}/></button>
       </div>}
     </div>
@@ -394,12 +392,12 @@ export function VttComparison({ session, onChange, onAddFiles, onGenerate, onApp
     <div className="comparison-grid-frame">
       <div className="comparison-heading-scroll" ref={headingScrollRef} onScroll={event => syncScroll(event, timelineScrollRef.current)}>
         <div className="comparison-grid comparison-column-headers">
-          <div className="comparison-speaker-heading"><span>話者</span><button className="comparison-text-button" onClick={()=>{setFollowPlayback(false);const keys=[...new Set([...speakerRuns.values()].filter(r=>r.count>1).map(r=>r.key))];setCollapsed(old=>old.size?new Set():new Set(keys));}}>{collapsed.size?'すべて展開':'まとめる'}</button></div><div className="comparison-axis-heading"><span>元動画の時刻</span><ArrowDown size={13}/></div>
+          <div className="comparison-speaker-heading"><span>話者</span></div><div className="comparison-axis-heading"><span>時刻</span></div>
           {sources.map((source, index) => <div className={`comparison-model-header model-${index}`} key={source.id}>
             <div className="comparison-model-top"><span className="comparison-model-index">{String.fromCharCode(65 + index)}</span><ModelName name={source.name} onCommit={value => renameSource(source.id, value)} disabled={busy}/><button type="button" className="comparison-mini-icon comparison-remove-source" aria-label={`${source.name}を比較から外す`} title={sources.length <= 1 ? "VTTを1つ以上残してください" : "このモデルを比較から外す"} disabled={busy || sources.length <= 1 || (!source.generated&&sources.filter(item=>!item.generated).length===1)} onClick={() => removeSource(source)}><X size={14}/></button></div>
             {source.editable&&<span className="comparison-draft-badge">カスタム・編集可能</span>}<span className="comparison-model-file" title={source.fileName}><FileText size={11}/>{source.fileName}</span>
             <div className="comparison-model-meta"><span>{source.cues.length.toLocaleString()}字幕</span>{source.id === session.referenceId && <span className="comparison-reference-badge">時間軸の基準</span>}</div>
-            <button type="button" className="comparison-bulk-adopt" disabled={busy} aria-label={`${source.name}の字幕をすべて採用`} onClick={() => adoptAllText(source)}><CheckCheck size={13}/>字幕をすべて採用</button>
+            <button type="button" className="comparison-bulk-adopt" disabled={busy} aria-label={`${source.name}をすべて採用`} onClick={() => adoptAllText(source)}><CheckCheck size={13}/>すべて採用</button>
           </div>)}
           <div className="comparison-add-header"><button className="comparison-plus" aria-label="比較列を追加" aria-expanded={!!addMenu} disabled={busy} onClick={event=>{const box=event.currentTarget.getBoundingClientRect();setAddMenu(old=>old?null:{top:box.bottom+4,right:Math.max(8,window.innerWidth-box.right)});}}>＋</button></div>
         </div>

@@ -6,6 +6,7 @@ import {deleteTimeRange,timeRangesForText} from '@/src/lib/editor';
 import {confirmAction,fileKey} from '@/browser';
 import {MediaDrop} from '@/media-drop';
 import {SubtitleInput} from '@/components/subtitle-input';
+import {useSaveOptions} from '@/save-menu';
 "use client";
 import { Fragment,useCallback,useEffect,useMemo,useRef,useState,type CSSProperties,type MouseEvent as ReactMouseEvent } from "react";
 import { AlertCircle,ArrowDown,ArrowDownToLine,ArrowUp,AudioLines,Check,ChevronRight,CircleHelp,Copy,FileCode2,FileText,Film,FolderOpen,Link2,Menu,MessagesSquare,Pencil,Play,Pause,UserRound,Redo2,RotateCcw,Save,Scissors,Search,Settings2,Trash2,Undo2,Upload,Users,WandSparkles,X } from "lucide-react";
@@ -259,6 +260,17 @@ export default function Home({active=true,view:requestedView,onViewChange,onWork
  const updateCutTime=(cut:CutRecord,start:number,end:number)=>{if(end>Math.max(doc.durationMs,mediaDuration??0))throw new Error("終了時刻が読み込んだ字幕・メディアの範囲外です。");apply(s=>updateCut(s,cut.id,{start,end,precision:"manual"}));notify("カット時刻を更新しました",true);};
  const colorFor=(canonical:string|null)=>!canonical||isCompound(canonical)?MUTED:PALETTE[Math.max(0,atoms.indexOf(canonical))%PALETTE.length];
  const canMergeInView=filter==="all"&&!query.trim();
+ const saveBusy=loading||mediaExportBusy||aiCleanupBusy;
+ useSaveOptions(active,view==='compare'?[
+  {id:'comparison-project',label:'比較プロジェクト（JSON）',description:'元字幕・カスタム列・採用状態を保存して再開',disabled:saveBusy||!comparison,run:saveComparison},
+  {id:'adopted-vtt',label:'採用した字幕（VTT）',description:'採用した文章と話者を字幕ファイルへ出力',disabled:saveBusy||!comparison,run:downloadComparisonVtt},
+ ]:[
+  {id:'editor-project',label:'編集プロジェクト（JSON）',description:'本文・話者・カット位置を保存して再開',disabled:saveBusy||!hasTranscript,run:downloadProject},
+  {id:'edited-vtt',label:'編集済み字幕（VTT）',description:'時刻と話者の出力設定を選んで保存',disabled:saveBusy||!hasTranscript,run:()=>setModal('export')},
+  {id:'cut-media',label:'カットした動画・音声',description:'カット区間を除いてつなぎ直した映像・音声',disabled:saveBusy||!hasTranscript||!mediaFile,run:()=>{stopAnalysis();mediaRef.current?.pause();setModal('video');}},
+  {id:'cuts-json',label:'カット記録（JSON）',description:'削除区間の開始・終了時刻と理由',disabled:saveBusy||!hasTranscript,run:()=>downloadCuts('json')},
+  {id:'cuts-csv',label:'カット記録（CSV）',description:'動画編集用の削除区間を表形式で出力',disabled:saveBusy||!hasTranscript||mediaDuration===undefined,run:()=>downloadCuts('csv')},
+ ]);
  return <div className={`app-shell compact-ui pane-editor${view==="compare"?" compare-mode":""}${largeText?" large-text":""}${showDeleted?" show-deleted":""}${reviewTarget?" has-review":""}`} onDragEnter={e=>{if(Array.from(e.dataTransfer.types).includes("Files")){e.preventDefault();dragDepth.current++;setDragging(true);}}} onDragOver={e=>{if(Array.from(e.dataTransfer.types).includes("Files")){e.preventDefault();e.dataTransfer.dropEffect="copy";}}} onDragLeave={e=>{e.preventDefault();dragDepth.current=Math.max(0,dragDepth.current-1);if(!dragDepth.current)setDragging(false);}} onDrop={e=>{e.preventDefault();dragDepth.current=0;setDragging(false);handleFiles(Array.from(e.dataTransfer.files));}}>
  <div className="body-layout">{sidebarOpen&&<button className="sidebar-scrim" aria-label="メニューを閉じる" onClick={()=>setSidebarOpen(false)}/>}
  <aside className={`sidebar${sidebarOpen?" mobile-open":""}`}>
@@ -278,7 +290,7 @@ export default function Home({active=true,view:requestedView,onViewChange,onWork
  <main className="workspace">
  <div className="workspace-topbar" role="toolbar" aria-label="ファイル操作">
   <button className="icon-button mobile-menu-button" aria-label="ファイルと話者のメニュー" aria-expanded={sidebarOpen} onClick={()=>setSidebarOpen(!sidebarOpen)}><Menu size={20}/></button>
-  <div className="heading-actions"><button className="button secondary" disabled={loading||mediaExportBusy||aiCleanupBusy} onClick={view==='compare'?loadComparisonDemo:resetSample}>サンプル</button><button className="button secondary" disabled={loading||mediaExportBusy||aiCleanupBusy} onClick={()=>{setPasteOpen(!pasteOpen);if(view!=='compare')setSidebarOpen(true);}}>VTTを貼り付け</button><button className="button secondary" disabled={mediaExportBusy} onClick={()=>setModal('terminology')}>用語辞書</button>{view!=='compare'&&<button className="button secondary" disabled={mediaExportBusy||!cleanupSources.length} onClick={()=>setModal('cleanup')}>字幕を整える</button>}{view==='compare'&&<div id="comparison-top-actions"/>}<button className="button primary" disabled={loading||mediaExportBusy||aiCleanupBusy||(view==="compare"?!comparison:!hasTranscript)} onClick={view==="compare"?saveComparison:()=>setModal("export")}><ArrowDownToLine size={16}/>{view==="compare"?"比較を保存":"保存・書き出し"}</button></div>
+  <div className="heading-actions"><button className="button secondary" disabled={loading||mediaExportBusy||aiCleanupBusy} onClick={view==='compare'?loadComparisonDemo:resetSample}>サンプル</button><button className="button secondary" disabled={loading||mediaExportBusy||aiCleanupBusy} onClick={()=>{setPasteOpen(!pasteOpen);if(view!=='compare')setSidebarOpen(true);}}>VTTを貼り付け</button><button className="button secondary" disabled={mediaExportBusy} onClick={()=>setModal('terminology')}>用語辞書</button>{view!=='compare'&&<button className="button secondary" disabled={mediaExportBusy||!cleanupSources.length} onClick={()=>setModal('cleanup')}>字幕を整える</button>}{view==='compare'&&<div id="comparison-top-actions"/>}</div>
  </div>
  {view==='compare'&&pasteOpen&&<div className="comparison-inline-paste"><SubtitleInput disabled={loading||mediaExportBusy||aiCleanupBusy} open={pasteOpen} onOpen={()=>setPasteOpen(true)} onClose={()=>setPasteOpen(false)} onFiles={files=>handleFiles(files,true)}/></div>}
  {downloadFile&&<div className="recent-export"><span>直近の書き出し：<strong>{downloadFile.name}</strong></span><button className="button secondary small" onClick={()=>setModal("download")}><ArrowDownToLine size={14}/>保存方法を開く</button></div>}
