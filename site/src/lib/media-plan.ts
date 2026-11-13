@@ -88,6 +88,19 @@ export function buildMediaCutPlan(cuts: readonly MediaCutInput[], durationMs: nu
   return { durationMs, cutDurationMs, outputDurationMs: outputCursor, cuts: union, keep, clippedCutCount };
 }
 
+/** Select the removed union instead of its complement, on a fresh timeline. */
+export function buildRemovedMediaPlan(cuts: readonly MediaCutInput[], durationMs: number, subtitleEndMs?: number): MediaCutPlan {
+  const normal = buildMediaCutPlan(cuts, durationMs, subtitleEndMs);
+  let cursor = 0;
+  const keep = normal.cuts.map(range => {
+    const outputStart = cursor;
+    cursor += range.end - range.start;
+    return { ...range, outputStart, outputEnd: cursor };
+  });
+  return { ...normal, cuts: normal.keep.map(({ start, end }) => ({ start, end })), keep,
+    outputDurationMs: normal.cutDurationMs, cutDurationMs: normal.outputDurationMs };
+}
+
 /**
  * Intersect one decoded sample [startSeconds, endSeconds) with retained media.
  * Results use seconds and keep submillisecond sample precision. A sample that

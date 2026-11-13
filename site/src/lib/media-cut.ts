@@ -5,7 +5,7 @@ import {
   canEncodeAudio, canEncodeVideo,
 } from "mediabunny";
 import type { InputAudioTrack, InputVideoTrack, StreamTargetChunk } from "mediabunny";
-import { buildMediaCutPlan } from "./media-plan";
+import { buildMediaCutPlan, buildRemovedMediaPlan } from "./media-plan";
 import type { KeepSegment, MediaCutInput } from "./media-plan";
 import {measure} from '../../processing-metrics';
 
@@ -33,6 +33,7 @@ export interface RenderCutMediaOptions {
   /** Discard all source media after the input VTT's last cue end. */
   subtitleEndMs: number;
   preserveTail?: boolean;
+  removedOnly?: boolean;
   format: "mp4" | "webm";
   signal?: AbortSignal;
   onProgress?: (progress: CutMediaProgress) => void;
@@ -388,8 +389,8 @@ async function renderCutMediaImpl(options: RenderCutMediaOptions): Promise<CutMe
     if (!info.audioDecodable) throw new Error("このブラウザーでは元ファイルの音声をデコードできません。音声を省略せず処理を中止しました。");
     if (format === "mp4" && !info.mp4Supported) throw new Error("このブラウザーでは、この映像・音声構成の MP4 を作成できません。WebM を選択してください。");
     if (format === "webm" && !info.webmSupported) throw new Error("このブラウザーでは、この映像・音声構成の WebM を作成できません。対応する Chrome / Edge で開いてください。");
-    const plan = buildMediaCutPlan(cuts, info.durationMs, options.preserveTail ? undefined : subtitleEndMs);
-    if (!plan.keep.length) throw new Error("すべての区間がカット対象です。残す区間を作ってから書き出してください。");
+    const plan = (options.removedOnly ? buildRemovedMediaPlan : buildMediaCutPlan)(cuts, info.durationMs, options.preserveTail ? undefined : subtitleEndMs);
+    if (!plan.keep.length) throw new Error(options.removedOnly ? "確認用に書き出すカット区間がありません。" : "すべての区間がカット対象です。残す区間を作ってから書き出してください。");
     const extension = format === "mp4" ? info.hasVideo ? "mp4" : "m4a" : "webm";
     const mimeType = `${info.hasVideo ? "video" : "audio"}/${format === "mp4" ? "mp4" : "webm"}`;
     const [videoTrack, audioTrack] = await Promise.all([input.getPrimaryVideoTrack(), input.getPrimaryAudioTrack()]);
