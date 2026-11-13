@@ -229,7 +229,7 @@ export function VttComparison({ session, onChange, onAddFiles, onApply, onExport
     if (!node || visibleCount >= filteredRows.length || typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver(entries => {
       if (entries.some(entry => entry.isIntersecting)) setDisplay(current => ({ key: displayKey, count: Math.min(filteredRows.length, (current.key === displayKey ? current.count : PAGE_SIZE) + PAGE_SIZE) }));
-    }, { rootMargin: "700px 0px" });
+    }, { root: node.closest(".comparison-scroll-panel"), rootMargin: "700px 0px" });
     observer.observe(node);
     return () => observer.disconnect();
   }, [visibleCount, filteredRows.length, displayKey]);
@@ -379,7 +379,7 @@ export function VttComparison({ session, onChange, onAddFiles, onApply, onExport
 
     <div className="comparison-load-more" ref={loadMoreRef}>{visibleCount < filteredRows.length ? <button type="button" className="button secondary small" onClick={() => setDisplay({ key: displayKey, count: Math.min(filteredRows.length, visibleCount + PAGE_SIZE) })}><ArrowDown size={13}/>スクロールして続きを表示<span>{Math.min(visibleCount, filteredRows.length).toLocaleString()} / {filteredRows.length.toLocaleString()}</span></button> : <span>{filteredRows.length.toLocaleString()}区間を表示{filteredRows.length !== rows.length ? ` / 全${rows.length.toLocaleString()}区間` : " · 最後まで表示しています"}</span>}<span className="comparison-pan-hint"><ArrowLeftRight size={12}/>横にスクロールして比較</span></div>
 
-    <div className="comparison-bottom-bar"><div className="comparison-bottom-summary"><div className="comparison-bottom-summary-main"><span className="comparison-bottom-stat"><CheckCheck size={15}/><strong>{summary.cueCount.toLocaleString()}</strong> 字幕を採用</span>{summary.cueCount > 0 && <span className="comparison-end-time"><Scissors size={12}/>採用VTTの終了 <time>{formatTime(adoptedEnd, true)}</time></span>}</div>{summary.cueCount > 0 && <p className="comparison-bottom-note">会話編集に反映後、この終了時刻以降の動画を自動カットします。</p>}<p className="comparison-bottom-note">検索・差分表示にかかわらず、採用した全区間を書き出します。</p></div><button type="button" className="comparison-text-button" disabled={busy || !hasSpeakerOverrides} onClick={resetSpeakers}><RotateCcw size={12}/>すべての話者を字幕に合わせる</button></div>
+    <div className="comparison-bottom-bar"><div className="comparison-bottom-summary"><div className="comparison-bottom-summary-main"><span className="comparison-bottom-stat"><CheckCheck size={15}/><strong>{summary.cueCount.toLocaleString()}</strong> 字幕を採用</span>{summary.cueCount > 0 && <span className="comparison-end-time"><Scissors size={12}/>採用VTTの終了 <time>{formatTime(adoptedEnd, true)}</time></span>}</div>{summary.cueCount > 0 && <p className="comparison-bottom-note">会話編集に反映後も、字幕のない末尾は標準で保持します。</p>}<p className="comparison-bottom-note">検索・差分表示にかかわらず、採用した全区間を書き出します。</p></div><button type="button" className="comparison-text-button" disabled={busy || !hasSpeakerOverrides} onClick={resetSpeakers}><RotateCcw size={12}/>すべての話者を字幕に合わせる</button></div>
     <div className="comparison-live-status" aria-live="polite" aria-atomic="true">{announcement}</div>
   </section>;
 }

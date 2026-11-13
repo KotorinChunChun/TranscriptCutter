@@ -1,4 +1,5 @@
 .vtt-comparison {
+  position: relative;
   --comparison-green: #167b64;
   --comparison-green-pale: #edf7f1;
   --comparison-amber: #8a6325;

@@ -16,4 +16,8 @@
 #root{height:100dvh;display:flex;flex-direction:column;overflow:hidden}.workflow{box-sizing:border-box;flex:0 0 auto;height:auto;min-height:54px;flex-wrap:wrap}.workflow button{white-space:nowrap}.workflow>span{margin-left:0}.workflow>span[aria-live]{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:120px}.workflow>span:last-child{margin-left:auto}.workflow-pane{flex:1;min-height:0;overflow:hidden}.workflow-pane:has(.recognition-source){display:flex;flex-direction:column}.recognition-source{flex:0 0 auto}.recognition-source~div:not([hidden]){flex:1;min-height:0;overflow:hidden}.recognition.guided-recognition{height:100%;min-height:0;box-sizing:border-box;overflow:auto}.workflow-pane .app-shell{height:100%!important}.workflow-status{position:static;flex:0 0 24px;box-sizing:border-box}
 .history-count{margin:0 0 8px;text-align:right}.workflow .stage-toggle button:disabled{opacity:.5;cursor:default}
 
+/* The page frame never scrolls; each workspace owns its scroll area. */
+html,body{height:100%;overflow:hidden}
+#root{height:100%}
+
 .setup-column{container-type:inline-size}@container(max-width:620px){.range-fields{grid-template-columns:auto minmax(0,1fr)}.range-fields label{white-space:nowrap}}.recognition .media-drop{display:block;width:100%;box-sizing:border-box;min-height:64px;padding:12px;border:2px dashed #7ca99b;background:#fff;color:#315b4d;text-align:center}.media-drop[aria-disabled=true]{opacity:.5}.subtitle-paste textarea{width:100%;box-sizing:border-box;min-height:140px}.subtitle-paste button{margin:4px 0}.sidebar-upload{box-sizing:border-box}
