@@ -6,7 +6,8 @@ export class SpeechError extends Error {code:string;status:number;constructor(me
 export const needsBearerKey=(error:unknown)=>error instanceof SpeechError&&['bearer_key_required','bearer_key_invalid'].includes(error.code);
 export function canConfigureConnection(busy:boolean,current:string,next:string){if(!busy)return true;try{return new URL(current).href===new URL(next).href;}catch{return false;}}
 export class SpeechClient {
- private clientId=crypto.randomUUID();
+ private clientId:string;
+ constructor(clientId:string=crypto.randomUUID()){this.clientId=clientId;}
  private async decode(response:Response){const value=await response.json();if(!response.ok)throw new SpeechError(value.error?.message??value.error??value.detail??`サーバー応答 ${response.status}`,value.code??'',response.status);return value;}
  private headers():Record<string,string>{return {'X-TC-Client':this.clientId};}
  async connectionSettings(){return this.decode(await fetch('/connection',{headers:this.headers()}));}

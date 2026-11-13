@@ -20,6 +20,7 @@ import {useTranscriptSelection} from "@/components/use-transcript-selection";
 import {VttComparison} from "@/components/vtt-comparison";
 import {createComparisonSession,addComparisonSources,getSelectedCues,exportComparisonJson,importComparisonJson,type ComparisonSession,type ComparisonSource} from "@/src/lib/comparison";
 import {createSampleComparison} from "@/src/lib/comparison-sample";
+import {restoredWorkspace,useWorkspaceSave,workspaceRestoreError} from '@/workspace-storage';
 import {useTranscriptPlayback} from "@/components/use-transcript-playback";
 import {buildTimedItemIndex,findActiveTimedItems,type PlaybackMode} from "@/src/lib/transcript-playback";
 import {TextCorrectionDialog,SelectionSpeakerDialog,type TranscriptCorrection,type SpeakerSelectionScope} from "@/components/transcript-edit-dialogs";
@@ -41,21 +42,29 @@ type ModalName="correct"|"selection-speaker"|"video"|"download"|"export"|"settin
 type ToastMessage={text:string;undoFrom?:EditorState};
 
 export type WorkspaceView="chat"|"vtt"|"compare";
+type EditorSnapshot={project:string;comparison:string|null;isSample:boolean;warnings:string[];merging:boolean;maxGap:string;showTimes:boolean;largeText:boolean;showDeleted:boolean};
+function restoreEditor(){
+ const saved=restoredWorkspace<EditorSnapshot>('editor');
+ if(!saved)return null;
+ try{return {...saved,data:{...saved.data,parsed:importProjectJson(saved.data.project),session:saved.data.comparison?importComparisonJson(saved.data.comparison):null}};}
+ catch(error){workspaceRestoreError(error);return null;}
+}
 export default function Home({active=true,view:requestedView,onViewChange,onWorkspaceBusyChange}:{active?:boolean;view?:WorkspaceView;onViewChange?:(view:WorkspaceView)=>void;onWorkspaceBusyChange?:(busy:boolean)=>void}){
- const [baseDoc,setDoc]=useState<EditorDocument>(EMPTY_DOC);
+ const [restored]=useState(restoreEditor);
+ const [baseDoc,setDoc]=useState<EditorDocument>(()=>restored?.data.parsed.doc??EMPTY_DOC);
  const [reviewTarget,setReviewTarget]=useState<ReviewTarget|null>(null),[reviewRange,setReviewRange]=useState<TimeRange|null>(null),[reviewText,setReviewText]=useState<TextSpan[]>([]),[visualResults,setVisualResults]=useState<Record<string,Verdict>>({});
- const [comparison,setComparison]=useState<ComparisonSession|null>(null);
+ const [comparison,setComparison]=useState<ComparisonSession|null>(()=>restored?.data.session??null);
  const [pasteOpen,setPasteOpen]=useState(false);
  const [downloadFile,setDownloadFile]=useState<DownloadFile|null>(null);
- const [history,setHistory]=useState<{past:EditorState[];present:EditorState;future:EditorState[]}>({past:[],present:EMPTY,future:[]});
+ const [history,setHistory]=useState<{past:EditorState[];present:EditorState;future:EditorState[]}>(()=>({past:[],present:restored?.data.parsed.state??EMPTY,future:[]}));
  const state=history.present;
  const doc=useMemo(()=>resolveEditorDocument(baseDoc,state),[baseDoc,state.cueRevisions]);
  const hasTranscript=doc.cues.length>0;
- const [fileName,setFileName]=useState("");const [isSample,setIsSample]=useState(false);
- const [warnings,setWarnings]=useState<string[]>([]);const [error,setError]=useState("");const [toast,setToast]=useState<ToastMessage|null>(null);const [toastPaused,setToastPaused]=useState(false);const [loading,setLoading]=useState(false);
+ const [fileName,setFileName]=useState(()=>restored?.data.parsed.sourceFile??"");const [isSample,setIsSample]=useState(restored?.data.isSample??false);
+ const [warnings,setWarnings]=useState<string[]>(restored?.data.warnings??[]);const [error,setError]=useState("");const [toast,setToast]=useState<ToastMessage|null>(null);const [toastPaused,setToastPaused]=useState(false);const [loading,setLoading]=useState(false);
  const [modal,setModal]=useState<ModalName>(null);const [sidebarOpen,setSidebarOpen]=useState(false);const [dragging,setDragging]=useState(false);const [mounted,setMounted]=useState(false);
- const [merging,setMerging]=useState(true);const [maxGap,setMaxGap]=useState("none");const [showTimes,setShowTimes]=useState(true);const [largeText,setLargeText]=useState(false);
- const [query,setQuery]=useState("");const [filter,setFilter]=useState("all");const [localView,setLocalView]=useState<WorkspaceView>("chat");const view=requestedView??localView;const setView=useCallback((next:WorkspaceView)=>{setLocalView(next);onViewChange?.(next);},[onViewChange]);const [interactionMode,setInteractionMode]=useState<TranscriptInteractionMode>("delete");const [showDeleted,setShowDeleted]=useState(false);
+ const [merging,setMerging]=useState(restored?.data.merging??true);const [maxGap,setMaxGap]=useState(restored?.data.maxGap??"none");const [showTimes,setShowTimes]=useState(restored?.data.showTimes??true);const [largeText,setLargeText]=useState(restored?.data.largeText??false);
+ const [query,setQuery]=useState("");const [filter,setFilter]=useState("all");const [localView,setLocalView]=useState<WorkspaceView>("chat");const view=requestedView??localView;const setView=useCallback((next:WorkspaceView)=>{setLocalView(next);onViewChange?.(next);},[onViewChange]);const [interactionMode,setInteractionMode]=useState<TranscriptInteractionMode>("delete");const [showDeleted,setShowDeleted]=useState(restored?.data.showDeleted??false);
  const [selectedLines,setSelectedLines]=useState<Set<string>>(new Set());const [visibleCount,setVisibleCount]=useState(24);
  const [renameTarget,setRenameTarget]=useState("");const [renameValue,setRenameValue]=useState("");
  const [correctionCueIds,setCorrectionCueIds]=useState<string[]>([]);
@@ -64,7 +73,9 @@ export default function Home({active=true,view:requestedView,onViewChange,onWork
  const [fillerTerms,setFillerTerms]=useState("えっと、えーと、えーっと、まあ");const [fillerCandidates,setFillerCandidates]=useState<FillerCandidate[]>([]);const [chosenFillers,setChosenFillers]=useState<Set<string>>(new Set());
  const [silenceMode,setSilenceMode]=useState<"gap"|"audio">("gap");const [silenceThreshold,setSilenceThreshold]=useState("1.5");const [volumeThreshold,setVolumeThreshold]=useState("-40");const [padding,setPadding]=useState("120");
  const [silenceCandidates,setSilenceCandidates]=useState<(SilenceRange|SubtitleGap)[]>([]);const [detecting,setDetecting]=useState(false);const [progress,setProgress]=useState(0);const [analysisNote,setAnalysisNote]=useState("");
- const [mediaFile,setMediaFile]=useState<File|null>(null);const [mediaUrl,setMediaUrl]=useState("");const [mediaDuration,setMediaDuration]=useState<number|undefined>();
+ const [mediaFile,setMediaFile]=useState<File|null>(restored?.file??null);const [mediaUrl,setMediaUrl]=useState(()=>restored?.file?URL.createObjectURL(restored.file):"");const [mediaDuration,setMediaDuration]=useState<number|undefined>(restored?.data.parsed.mediaDurationMs);
+ const snapshot=useMemo(()=>({project:exportProjectJson(baseDoc,history.present,{sourceFile:fileName,...(mediaDuration!==undefined?{mediaDurationMs:mediaDuration}:{})}),comparison:comparison?exportComparisonJson(comparison):null,isSample,warnings,merging,maxGap,showTimes,largeText,showDeleted} satisfies EditorSnapshot),[baseDoc,history.present,fileName,mediaDuration,comparison,isSample,warnings,merging,maxGap,showTimes,largeText,showDeleted]);
+ useWorkspaceSave('editor',snapshot,mediaFile);
  const [mediaExportBusy,setMediaExportBusy]=useState(false);
  useEffect(()=>{onWorkspaceBusyChange?.(mediaExportBusy);},[mediaExportBusy,onWorkspaceBusyChange]);
  const [exportTimeline,setExportTimeline]=useState<"original"|"edited">("original");const [speakerFormat,setSpeakerFormat]=useState<"voice"|"prefix">("voice");
@@ -121,7 +132,7 @@ export default function Home({active=true,view:requestedView,onViewChange,onWork
  const groupIndices=useMemo(()=>new Map(groups.map((group,index)=>[group.id,index])),[groups]);
  const playheadVisible=!!activeGroup&&filtered.some(group=>group.id===activeGroup.id);
  const activeGroups=groups.filter(g=>!g.deleted).length;
- const isDirty=!!state.keepTail||!!state.cueRevisions||state.cuts.length>0||Object.keys(state.aliases).length>0||Object.keys(state.speakerOverrides).length>0||state.forcedJoins.length>0;
+ const isDirty=!state.keepTail||!!state.cueRevisions||state.cuts.length>0||Object.keys(state.aliases).length>0||Object.keys(state.speakerOverrides).length>0||state.forcedJoins.length>0;
  const baseName=fileName.replace(/\.(vtt|json)$/i,"").replace(/\.vtt-edit$/,"");
  const exportOptions={sourceFile:fileName,...(mediaDuration!==undefined?{mediaDurationMs:mediaDuration}:{})};
  const exportResult=useMemo(()=>{if(modal!=="export"&&view!=="vtt")return {text:"",error:"",count:0};try{const result=buildEditedCues(doc,state,{...mergeOptions,timeline:exportTimeline});return {text:serializeVtt(result,{speakerFormat}),error:"",count:result.length};}catch(e){return {text:"",error:e instanceof Error?e.message:"出力内容を作成できませんでした。",count:0};}},[modal,view,doc,state,mergeOptions,exportTimeline,speakerFormat]);
@@ -202,7 +213,7 @@ export default function Home({active=true,view:requestedView,onViewChange,onWork
  const resetSample=async()=>{if(mediaExportBusy){notify("動画の書き出しを中止してから、サンプルを開いてください。");return;}if((isDirty||comparison)&&!(await confirmAction("サンプルに戻すと現在の編集内容と比較設定が置き換わります。必要な内容は保存しましたか？")))return;++importVersion.current;stopAnalysis();setLoading(false);playback.reset();setDoc(SAMPLE_DOC);setComparison(null);setHistory({past:[],present:createEditorState(),future:[]});setFileName("AI勉強会_サンプル.vtt");setIsSample(true);setWarnings([]);setError("");setQuery("");setFilter("all");setView("chat");setMediaFile(null);setMediaUrl("");setMediaDuration(undefined);setSidebarOpen(false);setSilenceCandidates([]);};
  const makeComparisonSource=(cues:Cue[],name:string,sourceFile:string,notes:string[]=[]):ComparisonSource=>({id:`model-${crypto.randomUUID()}`,name:name.replace(/\.vtt$/i,"").slice(0,80)||"モデル",fileName:sourceFile,cues,warnings:notes});
  const enterComparison=()=>{if(mediaExportBusy){notify("動画の書き出しを中止してから比較を開いてください。");return;}if(!comparison&&hasTranscript&&!isSample)setComparison(createComparisonSession([makeComparisonSource(doc.cues,fileName,fileName,warnings)]));setView("compare");setQuery("");setSidebarOpen(false);clearSelection();};
- useEffect(()=>{if(view==="compare")enterComparison();},[view]);
+ useEffect(()=>{if(active&&view==="compare"&&!comparison)enterComparison();},[active,view]);
  const chooseComparison=()=>{if(mediaExportBusy){notify("動画の書き出しを中止してからVTTを追加してください。");return;}setPasteOpen(true);setSidebarOpen(true);};
  const loadComparisonFiles=async(files:File[],append:boolean)=>{if(mediaExportBusy){notify("動画の書き出しを中止してからファイルを変更してください。");return;}const base=append?comparison:null;if(!files.length)return;if(files.some(file=>!/\.vtt$/i.test(file.name))){setError("比較にはVTTファイルを選択してください。比較プロジェクトのJSONは1つだけで開けます。");return;}if(files.length+(base?.sources.length??0)>3){setError("比較できるVTTは最大3つです。追加する場合は比較画面でモデルを1つ外してください。");setView("compare");return;}if(files.some(file=>file.size>20*1024*1024)){setError("VTTは1ファイル20 MB以下で選択してください。");return;}const version=++importVersion.current;setLoading(true);setError("");try{const inputs=await Promise.all(files.map(async file=>{const raw=new TextDecoder("utf-8",{fatal:true}).decode(await file.arrayBuffer());const parsed=parseVtt(raw);return makeComparisonSource(parsed.cues,file.name,file.name,parsed.warnings);}));if(version!==importVersion.current)return;const next=base?addComparisonSources(base,inputs):createComparisonSession(inputs);if(!append&&comparison&&!(await confirmAction("現在の比較を新しいVTTで置き換えます。必要な比較は先に保存してください。")))return;setComparison(next);setView("compare");setSidebarOpen(false);setQuery("");notify(`${next.sources.length}つのVTTを共通の時刻で並べました`);}catch(e){if(version===importVersion.current)setError(e instanceof Error?e.message:"比較用VTTを読み込めませんでした。");}finally{if(version===importVersion.current)setLoading(false);}};
  const handleFiles=(files:File[],forComparison=false)=>{if(!files.length)return;if(files.length===1&&(/\.json$/i.test(files[0].name)||!/\.vtt$/i.test(files[0].name))){void loadFile(files[0]);return;}if(forComparison||view==="compare"||files.length>1){void loadComparisonFiles(files,forComparison||view==="compare");return;}void loadFile(files[0]);};

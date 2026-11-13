@@ -1,14 +1,16 @@
-import {useEffect,useState,type CSSProperties} from 'react';
+import {useEffect,useRef,useState,type CSSProperties} from 'react';
 import {ALL_FORMATS,BlobSource,Input} from 'mediabunny';
 import {initialRange,resolveRange,rangeRequest,rangeClock,changeRangeMode,moveRangeHandle,relativeStart,relativeEnd,type RangeSelection,type StartMode,type EndMode} from './recognition-range';
 import {rangeSeekTarget} from './media-range-seek';
-export function useRecognitionRange(file:File|null){
- const [value,setValue]=useState<RangeSelection>(()=>initialRange()),[media,setMedia]=useState<{file:File|null;duration:number|null;error:string}>({file:null,duration:null,error:''});
+export function useRecognitionRange(file:File|null,restored?:RangeSelection){
+ const initialFile=useRef(file);
+ const [value,setValue]=useState<RangeSelection>(()=>restored??initialRange()),[media,setMedia]=useState<{file:File|null;duration:number|null;error:string}>({file:null,duration:null,error:''});
  useEffect(()=>{
-  setValue(initialRange());setMedia({file,duration:null,error:''});if(!file)return;let ignored=false;
+  const recovering=!!restored&&file===initialFile.current;
+  if(!recovering)setValue(initialRange());setMedia({file,duration:null,error:''});if(!file)return;let ignored=false;
   const input=new Input({formats:ALL_FORMATS,source:new BlobSource(file)});
   const dispose=()=>{try{input.dispose();}catch{/* An obsolete probe may have been disposed already. */}};
-  void input.computeDuration().then(duration=>{if(ignored)return;if(!Number.isFinite(duration)||duration<=0)throw Error('長さを確認できません。');setMedia({file,duration,error:''});setValue(initialRange(duration));}).catch(()=>{if(!ignored)setMedia({file,duration:null,error:'動画の長さを取得できません。'});}).finally(dispose);
+  void input.computeDuration().then(duration=>{if(ignored)return;if(!Number.isFinite(duration)||duration<=0)throw Error('長さを確認できません。');setMedia({file,duration,error:''});if(!recovering)setValue(initialRange(duration));}).catch(()=>{if(!ignored)setMedia({file,duration:null,error:'動画の長さを取得できません。'});}).finally(dispose);
   return()=>{ignored=true;dispose();};
  },[file]);
  const duration=media.file===file?media.duration:null,loading=!!file&&(media.file!==file||media.duration===null&&!media.error);
