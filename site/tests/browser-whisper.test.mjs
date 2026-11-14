@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {whisperSegments,browserWhisperModels,whisperCache,runtimeFiles,whisperLoadingPolicy} from '../browser-whisper-config.ts';
+import {whisperSegments,browserWhisperModels,whisperCache,runtimeFiles,whisperLoadingPolicy,browserWhisperModelSize} from '../browser-whisper-config.ts';
 import {transcriptionName} from '../recognition-state.ts';
 import {supportedModel} from '../recognition-options.ts';
 import {isWhisperModelCacheUrl,removeWhisperModelCache} from '../browser-whisper-cache.ts';
@@ -51,13 +51,28 @@ test('browser timestamps are absolute, clipped to the requested fractional bound
  assert.equal(whisperSegments([{text:'範囲外',timestamp:[40,50]}],60,90,1).length,0);
 });
 test('browser model identifiers pin multilingual revisions and the cache is tool-specific',()=>{
- assert.equal(browserWhisperModels.length,2);for(const model of browserWhisperModels){assert.match(model.revision,/^[a-f0-9]{40}$/);assert.ok(!model.repo.endsWith('.en'));}
+ assert.deepEqual(browserWhisperModels.map(m=>m.id),['tiny','base','small','medium','large-v3-turbo']);for(const model of browserWhisperModels){assert.match(model.revision,/^[a-f0-9]{40}$/);assert.ok(!model.repo.endsWith('.en'));}
  assert.match(whisperCache,/transcript-cutter/);assert.ok(runtimeFiles.some(name=>name.endsWith('.wasm')));
  assert.match(transcriptionName({id:'a'.repeat(32),engine:'browser-whisper',modelId:'tiny',status:'complete'},'fixture.wav',''),/__browser-this-PC__browser-whisper__tiny__/);
 });
 test('cached inference enables local cache resolution and forbids remote model acquisition',()=>{
  assert.deepEqual(whisperLoadingPolicy(false),{allowLocalModels:true,allowRemoteModels:false,local_files_only:true});
  assert.deepEqual(whisperLoadingPolicy(true),{allowLocalModels:false,allowRemoteModels:true,local_files_only:false});
+});
+
+test('added multilingual candidates expose pinned model sizes and only supported processing choices',()=>{
+ const gpu={available:true,reason:''};
+ for(const id of ['small','medium']){
+  const model=browserWhisperModels.find(m=>m.id===id);assert.ok(model);
+  assert.deepEqual(whisperDevices(gpu,model.devices),['wasm','webgpu']);
+  assert.ok(model.modelBytes.wasm>browserWhisperModels[1].modelBytes.wasm);
+  assert.match(browserWhisperModelSize(model,'wasm'),/モデル本体 約[\d,]+ MB/);
+ }
+ const turbo=browserWhisperModels.find(m=>m.id==='large-v3-turbo');
+ assert.deepEqual(whisperDevices(gpu,turbo.devices),['wasm']);
+ assert.equal(resolveWhisperDevice('webgpu',gpu,turbo.devices),'wasm');
+ assert.equal(browserWhisperModelSize(turbo,'webgpu'),'');
+ assert.equal(browserWhisperModels[0].id,'tiny');
 });
 test('new server contract distinguishes supported online-installable runtimes from unsupported models',()=>{
  const row=values=>({id:'whisper/tiny',x_meeting:{engineId:'whisper',processingMethods:[{id:'cpu'}],...values}});

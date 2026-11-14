@@ -20,18 +20,18 @@ test('ten seconds yields ten samples; fractional ranges include their last parti
  assert.deepEqual(thumbnailTimes({start:6000,end:16000}),[6000,7000,8000,9000,10000,11000,12000,13000,14000,15000]);
  assert.deepEqual(thumbnailTimes({start:150,end:1250}),[150,1150]);assert.throws(()=>thumbnailTimes({start:2,end:1}));
 });
-test('time deletion links source characters and exact media range, and survives project resume',()=>{
+test('time-only deletion keeps source characters and exact media range after project resume',()=>{
  const doc=buildDocument([cue('a',0,10000)]),before=createEditorState(),after=deleteTimeRange(doc,before,2000,5000);
- assert.deepEqual(getDeletedSpans(doc,after),[{cueId:'a',from:2,to:5}]);assert.deepEqual(timeRangesForText(doc,[{cueId:'a',from:2,to:5}]),[{start:2000,end:5000}]);assert.equal(before.cuts.length,0);
+ assert.deepEqual(getDeletedSpans(doc,after),[]);assert.deepEqual(after.cuts[0].spans,[]);assert.deepEqual(timeRangesForText(doc,[{cueId:'a',from:2,to:5}]),[{start:2000,end:5000}]);assert.equal(before.cuts.length,0);
  const restored=importProjectJson(exportProjectJson(doc,after,{sourceFile:'synthetic.vtt'}));assert.deepEqual(getDeletedSpans(restored.doc,restored.state),getDeletedSpans(doc,after));assert.equal(normalizeCuts(after.cuts,10000)[0].durationMs,3000);
 });
 test('gap deletion does not delete neighboring text; overlapping media edits use a union',()=>{
  const doc=buildDocument([cue('a',0,5000),cue('b',15000,20000)]),state=deleteTimeRange(doc,createEditorState(),5000,15000);
  assert.deepEqual(getDeletedSpans(doc,state),[]);const next=deleteTimeRange(doc,state,10000,17000);assert.equal(normalizeCuts(next.cuts,20000)[0].durationMs,12000);
 });
-test('time selection never splits emoji surrogate pairs and rejects invalid bounds',()=>{
+test('time-only selection never removes emoji or other characters and rejects invalid bounds',()=>{
  const doc=buildDocument([cue('a',0,3000,'A😀B')]),after=deleteTimeRange(doc,createEditorState(),1100,1900);
- assert.deepEqual(getDeletedSpans(doc,after),[{cueId:'a',from:1,to:3}]);assert.throws(()=>deleteTimeRange(doc,after,NaN,5));
+ assert.deepEqual(getDeletedSpans(doc,after),[]);assert.throws(()=>deleteTimeRange(doc,after,NaN,5));
 });
 test('visual decisions distinguish static frames, visible changes and incomplete observations',()=>{
  const a=new Uint8ClampedArray(400).fill(255),b=a.slice();assert.equal(visualVerdict([compareFrames(a,b)],true).kind,'small');b.fill(0,0,20);assert.equal(visualVerdict([compareFrames(a,b)],true).kind,'changed');assert.equal(visualVerdict([],true).kind,'unknown');assert.equal(visualVerdict([compareFrames(a,b)],false).kind,'unknown');assert.throws(()=>compareFrames(a,new Uint8ClampedArray(4)));

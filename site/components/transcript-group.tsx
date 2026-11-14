@@ -1,5 +1,5 @@
 import { Fragment, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, Copy, Film, Pause, Pencil, Play, Scissors, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, Film, Pause, Pencil, Play, Scissors, Trash2, VolumeX, Volume2 } from "lucide-react";
 import { Highlight, PRECISION_LABEL } from "@/components/editor-ui";
 import { TranscriptToken, type TranscriptInteractionMode } from "@/components/transcript-token";
 import type { ReviewTarget } from "@/components/timeline-review";
@@ -40,6 +40,8 @@ export interface TranscriptRowContext {
   onDeleteToken: (id: string) => void;
   onSelectLine: (lineId: string, selected: boolean) => void;
   onDeleteLine: (lineId: string) => void;
+  lineMuteState: (line: Line) => "none"|"partial"|"full";
+  onToggleLineMute: (line: Line) => void;
   onMerge: (groupId: string, direction: "up" | "down") => void;
   onPlayUtterance: (start: number, end: number, mode: PlaybackMode) => void;
   onReview: (target: ReviewTarget) => void;
@@ -76,7 +78,7 @@ export function TranscriptGroupRow({ ctx, group, groupIndex, palette, playing, t
         {group.lines.map(line => {
           const lineRemoved = line.tokens.filter(t => t.text.trim()).every(t => ctx.deletedTokens.has(t.id));
           if (lineRemoved && !revealDeleted) return null;
-          const selected = ctx.selectedLines.has(line.id);
+          const selected = ctx.selectedLines.has(line.id),muteState=ctx.lineMuteState(line);
           return <Fragment key={line.id}>
             {ctx.renderLineGap(line, group)}
             <div className={`source-line${selected ? " selected" : ""}${lineRemoved ? " removed" : ""}${ctx.activeLineIds.has(line.id) ? " is-playing" : ""}`} key={line.id} data-line-id={line.id}>
@@ -92,8 +94,9 @@ export function TranscriptGroupRow({ ctx, group, groupIndex, palette, playing, t
               <div className="line-visual-actions">
                 <button className="line-thumbnail-button" aria-label={`${formatTime(line.start, true)}の発言のサムネイル`} title="発言のサムネイル" disabled={!ctx.hasMedia || ctx.busy} onClick={() => ctx.onReview({ start: line.start, end: line.end, label: "発言のサムネイル", kind: "speech", thumbnails: true })}><Film size={13}/></button>
                 <button className="line-edit-button" aria-label={`${formatTime(line.start, true)}の字幕を修正`} title="この字幕の誤字を修正" onClick={() => ctx.onCorrect([line.cueId])}><Pencil size={13}/></button>
+                <button className="line-mute-button" aria-label={`${formatTime(line.start,true)}の行全体${muteState==='full'?'のミュートを解除':'をミュート'}`} aria-pressed={muteState==='full'} title={!ctx.hasMedia?'動画・音声を追加すると使えます':muteState==='full'?'この行のミュートを解除':muteState==='partial'?'一部ミュート中。この行全体をミュート':'この行全体の音声をミュート'} disabled={!ctx.hasMedia||ctx.busy} onClick={()=>ctx.onToggleLineMute(line)}>{muteState==='full'?<Volume2 size={14}/>:<VolumeX size={14}/>}</button>
+                <button className="line-delete-button" aria-label={`${formatTime(line.start, true)}の行を削除`} title="この元字幕行を削除" disabled={lineRemoved} onClick={() => ctx.onDeleteLine(line.id)}><Trash2 size={13}/></button>
               </div>
-              <button className="line-delete-button" aria-label={`${formatTime(line.start, true)}の行を削除`} title="この元字幕行を削除" disabled={lineRemoved} onClick={() => ctx.onDeleteLine(line.id)}><Trash2 size={13}/></button>
             </div>
           </Fragment>;
         })}

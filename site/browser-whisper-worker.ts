@@ -11,6 +11,7 @@ worker.onmessage=async({data})=>{
    const device:WhisperDevice=data.device??'wasm';
    if(device==='webgpu'){const status=await probeWhisperWebGPU((navigator as unknown as {gpu?:WhisperGpuApi}).gpu,isSecureContext);if(!status.available)throw Error(status.reason);}
    const model=browserWhisperModels.find(m=>m.id===data.model);if(!model)throw Error('管理対象外のブラウザーモデルです。');
+   if(!(model.devices as readonly WhisperDevice[]).includes(device))throw Error('このモデルは選択した処理方式に未対応です。');
    const runtime=data.runtime as string;
    const lib=await import(/* @vite-ignore */ runtime);
    const cache=await caches.open(whisperCache);

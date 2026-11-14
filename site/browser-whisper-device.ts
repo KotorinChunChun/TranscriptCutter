@@ -8,8 +8,8 @@ export function whisperManifestMatches(value:{device?:unknown;dtype?:any},device
  if(value.device===undefined)return device==='wasm';
  return value.device===device&&(device==='wasm'?value.dtype==='q8':value.dtype?.encoder_model==='fp32'&&value.dtype?.decoder_model_merged==='q4');
 }
-export const whisperDevices=(status:WhisperGpuStatus):WhisperDevice[]=>status.available?['wasm','webgpu']:['wasm'];
-export function resolveWhisperDevice(preferred:string|undefined,status:WhisperGpuStatus):WhisperDevice{return preferred==='webgpu'&&status.available?'webgpu':'wasm';}
+export const whisperDevices=(status:WhisperGpuStatus,allowed:readonly WhisperDevice[]=['wasm','webgpu']):WhisperDevice[]=>allowed.filter(device=>device==='wasm'||status.available);
+export function resolveWhisperDevice(preferred:string|undefined,status:WhisperGpuStatus,allowed:readonly WhisperDevice[]=['wasm','webgpu']):WhisperDevice{return preferred==='webgpu'&&status.available&&allowed.includes('webgpu')?'webgpu':'wasm';}
 export async function probeWhisperWebGPU(gpu:WhisperGpuApi|undefined,secure:boolean):Promise<WhisperGpuStatus>{
  if(!secure||!gpu)return {available:false,reason:!secure?'WebGPUにはHTTPSまたはlocalhostが必要です。':'このブラウザーではWebGPUを利用できません。'};
  let device:any;

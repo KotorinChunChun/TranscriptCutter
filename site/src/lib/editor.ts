@@ -244,6 +244,7 @@ export function updateCut(state: EditorState, id: string, patch: Partial<Omit<Cu
 }
 
 export function removeCut(state: EditorState, id: string): EditorState {
+  if (!state.cuts.some(c => c.id === id)) return state;
   return { ...state, cuts: state.cuts.filter(c => c.id !== id) };
 }
 
@@ -271,8 +272,11 @@ export function textSpansForTime(doc: EditorDocument, start:number, end:number):
   return spans;
 }
 export function deleteTimeRange(doc:EditorDocument,state:EditorState,start:number,end:number):EditorState {
-  const spans=textSpansForTime(doc,start,end);
-  return addCut(state,{start,end,kind:spans.length?"manual":"gap",precision:spans.length?"manual":"gap",text:spans.length?"時間軸から選択":"字幕なし区間",sourceCueIds:[...new Set(spans.map(s=>s.cueId))],spans});
+  if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end<=start)throw new Error("選択時刻を確認してください。");
+  const cues=doc.cues.filter(cue=>cue.start<end&&cue.end>start);
+  // Time selection describes media only. Source characters are linked explicitly by
+  // deleteTextSpans; inferred word timing must never choose extra text to remove.
+  return addCut(state,{start,end,kind:cues.length?"manual":"gap",precision:cues.length?"manual":"gap",text:cues.length?"メディアのみカット":"字幕なし区間",sourceCueIds:cues.map(cue=>cue.id),spans:[]});
 }
 
 /** Delete only newly selected source characters, including partial tokens. */
@@ -889,7 +893,7 @@ export function buildEditedCues(doc: EditorDocument, state: EditorState, options
     const voices = needsVoices ? getVoiceSpans(cue) : undefined;
     if (voices && !voiceRuns(cue, voices, keptParts).length) continue;
     const intervals = survivingIntervals(cue.start, cue.end, cuts);
-    if (!intervals.length) throw new Error(`字幕「${cue.text.slice(0, 24)}」の全区間がカット対象です。字幕を削除するか、カット時刻を調整してください。`);
+    if (!intervals.length) throw new Error(`字幕「${cue.text.slice(0, 24)}」の表示時間がすべてカットされています。本文は残しています。このカットを取り消すか、カット時刻を調整してください。字幕も削除する場合は文字を明示選択してください。`);
     const texts = intervals.map(() => "");
     const textParts: TextSpan[][] = intervals.map(() => []);
     // Media-only cuts never delete dialogue. Each retained token fragment is

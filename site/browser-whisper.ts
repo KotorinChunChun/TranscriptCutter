@@ -7,6 +7,7 @@ type Progress={file?:string;status?:string;loaded?:number;total?:number;progress
 const abortError=()=>new DOMException('ブラウザー処理を中止しました。','AbortError');
 const marker=(model:BrowserWhisperModel,device?:WhisperDevice)=>new URL(whisperMarkerPath(model,device),location.origin).href;
 export async function browserWhisperInstalled(model:BrowserWhisperModel,device:WhisperDevice='wasm'){
+ if(!(model.devices as readonly WhisperDevice[]).includes(device))return false;
  if(!globalThis.caches)return false;
  try{const cache=await caches.open(whisperCache),entry=await cache.match(marker(model,device))??(device==='wasm'?await cache.match(marker(model)):undefined);if(!entry)return false;const value=await entry.json(),{files}=value;return whisperManifestMatches(value,device)&&Array.isArray(files)&&files.length>=runtimeFiles.length+2&&(await Promise.all(files.map((url:string)=>cache.match(url)))).every(Boolean);}catch{return false;}
 }
@@ -31,6 +32,7 @@ export class BrowserWhisper {
   return new Promise<any>((resolve,reject)=>{const id=++this.sequence;this.pending.set(id,{resolve,reject,progress});this.worker!.postMessage({id,action,...value},transfer);});
  }
  async prepare(model:BrowserWhisperModel,install:boolean,signal:AbortSignal,onProgress:(value:Progress)=>void,device:WhisperDevice='wasm'){
+  if(!(model.devices as readonly WhisperDevice[]).includes(device))throw Error('このモデルは選択した処理方式に未対応です。');
   const key=model.id+':'+device;
   if(!install&&this.loadingModel===key&&this.worker)return;
   this.stop();if(!install&&!await browserWhisperInstalled(model,device))throw Error('選択した処理方式のモデルを先に導入してください。');
