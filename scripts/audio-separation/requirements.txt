@@ -1,0 +1,6 @@
+torch==2.6.0+cpu
+torchaudio==2.6.0+cpu
+speechbrain==1.0.3
+soundfile==0.13.1
+huggingface-hub==0.36.0
+av==16.0.1

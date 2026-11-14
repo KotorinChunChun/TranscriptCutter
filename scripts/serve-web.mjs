@@ -6,12 +6,14 @@ import {resolve,extname,sep} from 'node:path';
 import {pathToFileURL,fileURLToPath} from 'node:url';
 import {connectSpeech,serverUrl,ConnectionError,networkConnectionError} from './speech-connection.mjs';
 import {createCodexCleanup} from './codex-cleanup.mjs';
+import {createSpeakerSeparation} from './speaker-separation.mjs';
 const allowed=/^\/(?:api\/(?:health|jobs(?:\/[a-fA-F0-9]{32}(?:\/(?:segments|cancel|delete))?)?)|v1\/models)$/;
 export const localPeer=address=>['127.0.0.1','::1','::ffff:127.0.0.1'].includes(address);
 export function lanPeer(address){const ip=String(address).replace(/^::ffff:/,'');return localPeer(ip)||/^10\./.test(ip)||/^192\.168\./.test(ip)||/^172\.(?:1[6-9]|2\d|3[01])\./.test(ip);}
 export function createWebServer({directory=fileURLToPath(new URL('../dist-web/',import.meta.url)),assets,speechUrl='http://127.0.0.1:8769',speechToken='',launcherInfo,codexWorkDir,codexEnv,codexCleanup,network,management=false}={}){
  const root=resolve(directory),initial=serverUrl(speechUrl),sessions=new Map();
  const ai=codexCleanup??createCodexCleanup({workDir:codexWorkDir??resolve(root,'../runtime/codex-work'),env:codexEnv??process.env});
+ const separation=createSpeakerSeparation();
  const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(value));};
  const fail=(res,error)=>json(res,error instanceof ConnectionError?error.status:502,{error:error instanceof ConnectionError?error.message:'接続操作に失敗しました。',code:error instanceof ConnectionError?error.code:'connection_failed'});
  const sessionFor=req=>{
@@ -31,6 +33,7 @@ export function createWebServer({directory=fileURLToPath(new URL('../dist-web/',
   if(!hosts.includes(host)||network?.lan&&!lanPeer(req.socket.remoteAddress)||req.headers.origin&&req.headers.origin!==`${scheme}://${host}`){res.writeHead(403).end('接続元を確認してください。');return;}
   const url=new URL(req.url,`http://${host}`);
   res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Cache-Control','no-store');
+  if(await separation.handle(req,res))return;
   if(url.pathname.startsWith('/ai/')){
    try{
     const owner=req.headers['x-tc-client'];if(typeof owner!=='string'||!/^[a-f0-9-]{36}$/i.test(owner))throw Error('整理セッションを確認してください。');
@@ -102,7 +105,7 @@ export function createWebServer({directory=fileURLToPath(new URL('../dist-web/',
   }catch{res.writeHead(404).end('見つかりません。');}
  };
  const server=network?.tls?https.createServer({...network.tls,minVersion:'TLSv1.2'},handler):createServer(handler);
- server.once('close',()=>ai.close());
+ server.once('close',()=>{ai.close();separation.close();});
  return server;
 }
 async function main(){
