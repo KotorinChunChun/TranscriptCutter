@@ -1,3 +1,4 @@
+import {validatedWordTiming} from './word-timing';
 import { buildDocument, getSpeakerParts } from "./editor";
 import { parseVtt, formatTime, type Cue } from "./vtt";
 
@@ -85,7 +86,7 @@ function cloneCue(value: unknown, allowEmpty=false): Cue {
   if (value.settings !== undefined && (typeof value.settings !== "string" || value.settings.length > 4096)) throw new Error("比較元の字幕設定が正しくありません。");
   if (value.isMultiVoice !== undefined && typeof value.isMultiVoice !== "boolean") throw new Error("比較元の話者情報が正しくありません。");
   if (value.voicePayload !== undefined && (typeof value.voicePayload !== "string" || value.voicePayload.length > 2_000_000)) throw new Error("比較元の話者本文が正しくありません。");
-  return { id, start: value.start, end: value.end, text: value.text, speaker, sourceIds: [...value.sourceIds] as string[], sourceCount: Number(value.sourceCount), ...(typeof value.settings === "string" ? { settings: value.settings } : {}), ...(value.isMultiVoice === true ? { isMultiVoice: true, ...(typeof value.voicePayload === "string" ? { voicePayload: value.voicePayload } : {}) } : {}) };
+  return { id, start: value.start, end: value.end, text: value.text, speaker, sourceIds: [...value.sourceIds] as string[], sourceCount: Number(value.sourceCount), wordTiming:validatedWordTiming({text:value.text,start:Number(value.start),end:Number(value.end)},value.wordTiming), ...(typeof value.settings === "string" ? { settings: value.settings } : {}), ...(value.isMultiVoice === true ? { isMultiVoice: true, ...(typeof value.voicePayload === "string" ? { voicePayload: value.voicePayload } : {}) } : {}) };
 }
 function normalizeSource(value: unknown): ComparisonSource {
   if (!record(value)) throw new Error("比較元の形式が正しくありません。");

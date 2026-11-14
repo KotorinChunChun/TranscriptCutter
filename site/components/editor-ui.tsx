@@ -4,7 +4,7 @@ import { Play, RotateCcw, X } from "lucide-react";
 import { formatTime, parseTimestamp } from "@/src/lib/vtt";
 import type { CutRecord } from "@/src/lib/editor";
 
-export const PRECISION_LABEL: Record<string, string> = { cue: "字幕の時刻", estimated: "推定時刻", audio: "音量から検出", gap: "無音未確認", manual: "手動指定" };
+export const PRECISION_LABEL: Record<string, string> = { word: "単語時刻の候補", cue: "字幕の時刻", estimated: "推定時刻", audio: "音量から検出", gap: "無音未確認", manual: "手動指定" };
 export const KIND_LABEL: Record<string, string> = { word: "単語", selection: "選択範囲", line: "行", filler: "フィラー", silence: "無音", gap: "字幕の空白", manual: "範囲指定", tail: "VTT終了後" };
 
 export function Modal({title,eyebrow,children,footer,onClose,wide=false}:{title:string;eyebrow?:string;children:ReactNode;footer?:ReactNode;onClose:()=>void;wide?:boolean}) {

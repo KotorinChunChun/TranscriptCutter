@@ -3,6 +3,7 @@
  * Times are integer milliseconds. Reading never executes cue HTML.
  */
 export interface Cue {
+  wordTiming?: import('./word-timing').WordTiming;
   id: string;
   start: number;
   end: number;

@@ -1,8 +1,9 @@
 import type { Cue } from "./vtt";
+import {validatedWordTiming,wordCutCandidate} from './word-timing';
 
 export const DEFAULT_FILLERS = ["えっと", "えーと", "えーっと", "まあ"];
 export type CutKind = "word" | "line" | "filler" | "selection" | "silence" | "gap" | "manual" | "tail";
-export type CutPrecision = "cue" | "estimated" | "audio" | "manual" | "gap";
+export type CutPrecision = "cue" | "estimated" | "audio" | "manual" | "gap" | "word";
 export interface TextSpan { cueId: string; from: number; to: number }
 export interface Token extends TextSpan { id: string; lineId: string; text: string; start: number; end: number; word: boolean }
 export interface Line extends TextSpan { id: string; text: string; tokens: Token[]; start: number; end: number; precision: "cue" | "estimated" }
@@ -41,7 +42,7 @@ export interface EditedCue extends Cue { originalStart: number; originalEnd: num
 const own = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
 const forbidden = new Set(["__proto__", "prototype", "constructor"]);
 const kinds = new Set<CutKind>(["word", "line", "filler", "selection", "silence", "gap", "manual"]);
-const precisions = new Set<CutPrecision>(["cue", "estimated", "audio", "manual", "gap"]);
+const precisions = new Set<CutPrecision>(["cue", "estimated", "audio", "manual", "gap", "word"]);
 let sequence = 0;
 const uniqueId = () => `cut-${typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${++sequence}`}`;
 const cloneCut = (cut: CutRecord): CutRecord => ({ ...cut, sourceCueIds: [...cut.sourceCueIds], tokenIds: cut.tokenIds && [...cut.tokenIds], lineIds: cut.lineIds && [...cut.lineIds], spans: cut.spans?.map(s => ({ ...s })) });
@@ -74,6 +75,11 @@ function timeAt(cue: Cue, offset: number, rounded = true): number {
   return cue.start + (rounded ? Math.round(elapsed) : elapsed);
 }
 
+export function textCutCandidate(cue:Cue,from:number,to:number){
+  const candidate=wordCutCandidate(cue,from,to);
+  return candidate?{...candidate,precision:(candidate.interpolated?'estimated':'word') as CutPrecision,method:candidate.interpolated?'単語内を推定':'単語時刻の候補'}:{...positiveBounds(cue,from,to),precision:(from===0&&to===cue.text.length&&!('estimatedTiming' in cue&&cue.estimatedTiming)?'cue':'estimated') as CutPrecision,method:'文字数から推定',interpolated:true};
+}
+
 function wordSegments(text: string): { from: number; to: number; word: boolean }[] {
   if (typeof Intl.Segmenter === "function") {
     const segmenter = new Intl.Segmenter("ja", { granularity: "word" });
@@ -87,7 +93,7 @@ function cleanTerms(terms: readonly string[]): string[] {
 }
 
 export function buildDocument(sourceCues: readonly RevisedCue[], options: { fillerTerms?: string[] } = {}): EditorDocument {
-  const cues = sourceCues.map(c => ({ ...c, sourceIds: [...c.sourceIds], ...(c.voiceSpans ? { voiceSpans: c.voiceSpans.map(span => ({ ...span })) } : {}) }));
+  const cues = sourceCues.map(c => ({ ...c, wordTiming:validatedWordTiming(c,c.wordTiming), sourceIds: [...c.sourceIds], ...(c.voiceSpans ? { voiceSpans: c.voiceSpans.map(span => ({ ...span })) } : {}) }));
   const cueById = new Map<string, RevisedCue>();
   const lines: Line[] = [], tokens: Token[] = [];
   const lineById = new Map<string, Line>(), tokenById = new Map<string, Token>(), linesByCue = new Map<string, Line[]>();
@@ -247,7 +253,7 @@ function positiveBounds(cue: Cue, from: number, to: number): { start: number; en
 
 /** Use the same Unicode timing map in both text selection and the media timeline. */
 export function timeRangesForText(doc: EditorDocument, spans: readonly TextSpan[]): {start:number;end:number}[] {
-  return validatedTextSpans(doc, spans).map(span => positiveBounds(doc.cueById.get(span.cueId)!, span.from, span.to));
+  return validatedTextSpans(doc, spans).map(span => textCutCandidate(doc.cueById.get(span.cueId)!, span.from, span.to)).map(({start,end})=>({start,end}));
 }
 export function textSpansForTime(doc: EditorDocument, start:number, end:number): TextSpan[] {
   if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end<=start)throw new Error("選択時刻を確認してください。");
@@ -268,15 +274,17 @@ export function deleteTimeRange(doc:EditorDocument,state:EditorState,start:numbe
 }
 
 /** Delete only newly selected source characters, including partial tokens. */
-export function deleteTextSpans(doc: EditorDocument, state: EditorState, spans: readonly TextSpan[]): EditorState {
+export function deleteTextSpans(doc: EditorDocument, state: EditorState, spans: readonly TextSpan[], adjusted?:{start:number;end:number}): EditorState {
   const requested = validatedTextSpans(doc, spans);
   if (!requested.length) return state;
+  if(adjusted)return addCut(state,{...adjusted,kind:'selection',precision:'manual',text:requested.map(s=>doc.cueById.get(s.cueId)!.text.slice(s.from,s.to)).join(''),sourceCueIds:[...new Set(requested.map(s=>s.cueId))],spans:requested});
   const already = getDeletedSpansByCue(doc, state);
   let next = state;
   for (const span of requested) {
     const cue = doc.cueById.get(span.cueId)!;
     for (const part of retainedParts(cue, span.from, span.to, already.get(cue.id) ?? [])) {
-      next = addCut(next, { ...positiveBounds(cue, part.from, part.to), kind: "selection", precision: part.from === 0 && part.to === cue.text.length && !cue.estimatedTiming ? "cue" : "estimated", text: cue.text.slice(part.from, part.to), sourceCueIds: [cue.id], spans: [part] });
+      const candidate=textCutCandidate(cue,part.from,part.to);
+      next = addCut(next, { start:candidate.start,end:candidate.end, kind: "selection", precision:candidate.precision, text: cue.text.slice(part.from, part.to), sourceCueIds: [cue.id], spans: [part] });
     }
   }
   return next;
@@ -327,7 +335,8 @@ export function deleteTokens(doc: EditorDocument, state: EditorState, ids: reado
   let next = state;
   for (const span of mergeSpans(selected.map(t => ({ cueId: t.cueId, from: t.from, to: t.to })))) {
     const cue = doc.cueById.get(span.cueId)!;
-    next = addCut(next, { ...positiveBounds(cue, span.from, span.to), kind, precision: "estimated", text: cue.text.slice(span.from, span.to), sourceCueIds: [cue.id], spans: [span], tokenIds: selected.filter(t => t.cueId === span.cueId && t.from >= span.from && t.to <= span.to).map(t => t.id) });
+    const candidate=textCutCandidate(cue,span.from,span.to);
+    next = addCut(next, { start:candidate.start,end:candidate.end, kind, precision:candidate.precision, text: cue.text.slice(span.from, span.to), sourceCueIds: [cue.id], spans: [span], tokenIds: selected.filter(t => t.cueId === span.cueId && t.from >= span.from && t.to <= span.to).map(t => t.id) });
   }
   return next;
 }
@@ -982,7 +991,7 @@ export function importProjectJson(raw: string): { doc: EditorDocument; state: Ed
     if (!record(rawCue) || typeof rawCue.id !== "string" || typeof rawCue.start !== "number" || typeof rawCue.end !== "number" || typeof rawCue.text !== "string" || rawCue.text.length > 2000000 || !(typeof rawCue.speaker === "string" || rawCue.speaker === null) || !strings(rawCue.sourceIds) || !Number.isInteger(rawCue.sourceCount) || Number(rawCue.sourceCount) < 1) throw new Error("元字幕の形式が正しくありません。");
     if (rawCue.estimatedTiming !== undefined && typeof rawCue.estimatedTiming !== "boolean") throw new Error("字幕時刻の精度が正しくありません。");
     const voiceSpans = rawCue.voiceSpans !== undefined ? validatedVoiceSpans(rawCue.text, rawCue.voiceSpans) : undefined;
-    return { id: rawCue.id, text: rawCue.text, start: Number(rawCue.start), end: Number(rawCue.end), speaker: rawCue.speaker as string | null, sourceIds: [...rawCue.sourceIds], sourceCount: Number(rawCue.sourceCount), ...(typeof rawCue.settings === "string" ? { settings: rawCue.settings } : {}), ...(rawCue.estimatedTiming ? { estimatedTiming: true } : {}), ...(voiceSpans ? { voiceSpans } : {}), ...(rawCue.isMultiVoice === true ? { isMultiVoice: true, voicePayload: typeof rawCue.voicePayload === "string" ? rawCue.voicePayload : undefined } : {}) };
+    return { id: rawCue.id, text: rawCue.text, start: Number(rawCue.start), end: Number(rawCue.end), speaker: rawCue.speaker as string | null, sourceIds: [...rawCue.sourceIds], sourceCount: Number(rawCue.sourceCount), wordTiming:validatedWordTiming({text:rawCue.text,start:Number(rawCue.start),end:Number(rawCue.end)},rawCue.wordTiming), ...(typeof rawCue.settings === "string" ? { settings: rawCue.settings } : {}), ...(rawCue.estimatedTiming ? { estimatedTiming: true } : {}), ...(voiceSpans ? { voiceSpans } : {}), ...(rawCue.isMultiVoice === true ? { isMultiVoice: true, voicePayload: typeof rawCue.voicePayload === "string" ? rawCue.voicePayload : undefined } : {}) };
   });
   const doc = buildDocument(cues, { fillerTerms: strings(value.fillerTerms) ? value.fillerTerms : DEFAULT_FILLERS });
   const rawState = value.state;
