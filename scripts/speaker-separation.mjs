@@ -1,11 +1,11 @@
 import {createReadStream,existsSync} from 'node:fs';
 import {mkdir,readFile,writeFile,readdir,rename,rm,stat} from 'node:fs/promises';
 import {resolve} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {applicationRoot} from './application-paths.mjs';
 import {randomUUID,createHash} from 'node:crypto';
 import {spawn} from 'node:child_process';
 
-const repo=fileURLToPath(new URL('../',import.meta.url));
+const repo=applicationRoot();
 const idPattern=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 export function separationReferences(value){
  if(!Array.isArray(value)||value.length>3)throw Error('参照する話者は3人までです。');
