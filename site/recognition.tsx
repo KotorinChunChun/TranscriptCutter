@@ -21,7 +21,7 @@ import {RecognitionResults,isActiveJob,recognitionProgress,recognitionElapsed,tr
 import {recognitionSetup,managementUrl,type SetupStep} from './recognition-setup';
 import {effectiveDiarization,finishEstimate} from './recognition-options';
 import {useRecognitionRange,RecognitionRangeControls} from './recognition-range-controls';
-import {MediaDrop} from './media-drop';
+import {MediaDrop,RecognitionMediaPreview} from './media-drop';
 import {beginMetric,processingMetrics} from './processing-metrics';
 import {BrowserRecognition} from './browser-recognition';
 import {ServerMeasurements} from './server-measurements';
@@ -48,7 +48,7 @@ function ServerRecognition({active,onTransfer,onActivity,historyHost,sourceContr
  const [restored]=useState(()=>restoredWorkspace<{range:RangeSelection;step:SetupStep;job:Job|null;segments:Segment[];serverUrl:string}>('server-recognition'));
  const restoreJob=useRef(!!restored?.data.job),restoreSetup=useRef(!!restored);
  const client=useRef(new SpeechClient(speechSessionClientId())).current,reader=useRef(new RecognitionResults(client)).current;
- const resultList=useRef<HTMLDivElement>(null),player=useRef<HTMLVideoElement>(null),pendingCancel=useRef(false),owned=useRef(new Set<string>()),jobFile=useRef(''),uploadStarted=useRef(0);
+ const resultList=useRef<HTMLDivElement>(null),player=useRef<HTMLMediaElement>(null),pendingCancel=useRef(false),owned=useRef(new Set<string>()),jobFile=useRef(''),uploadStarted=useRef(0);
  const [file,setFile]=useState<File|null>(restored?.file??null),[url,setUrl]=useState(()=>restored?.file?URL.createObjectURL(restored.file):''),[models,setModels]=useState<Model[]>([]),[modelId,setModelId]=useState(''),[device,setDevice]=useState('auto'),[speakerMode,setSpeakerMode]=useState('none'),[connected,setConnected]=useState(false),[message,setMessage]=useState('接続中'),[error,setError]=useState('');
  const range=useRecognitionRange(file,restored?.data.range);
  const [mediaHash,setMediaHash]=useState(''),[hashing,setHashing]=useState(false),[hashProgress,setHashProgress]=useState(0),[confirmedSource,setConfirmedSource]=useState<{id:string;hash:string}|null>(null);
@@ -90,7 +90,7 @@ function ServerRecognition({active,onTransfer,onActivity,historyHost,sourceContr
  useEffect(()=>{if(!active)player.current?.pause();},[active]);
  useEffect(()=>()=>{if(url)URL.revokeObjectURL(url);},[url]);
  useEffect(()=>{setMediaHash('');setConfirmedSource(null);if(!file){setHashing(false);return;}const abort=new AbortController();setHashing(true);setHashProgress(0);const finish=beginMetric('media-identity',{fileName:file.name});void hashMedia(file,abort.signal,setHashProgress).then(hash=>{if(!abort.signal.aborted){setMediaHash(hash);finish();}}).catch(e=>{finish(abort.signal.aborted?'cancelled':'error');if(!abort.signal.aborted)setError('元動画を照合できません。ファイルを再ドロップしてください。'+String(e));}).finally(()=>{if(!abort.signal.aborted)setHashing(false);});return()=>abort.abort();},[file]);
- const load=(f:File)=>{if(busy)return;if(!isRecognitionMediaName(f.name)){setError('動画・音声を選択してください。');return;}setFile(f);setUrl(URL.createObjectURL(f));setSetupStep(4);setError('');setConfirmedSource(null);};
+ const load=(f:File)=>{if(busy)return;if(!isRecognitionMediaName(f.name)){setError('動画・音声を選択してください。');return;}setFile(f);setUrl(URL.createObjectURL(f));setSetupStep(3);setError('');setConfirmedSource(null);};
  const refresh=async(reset=false)=>{try{const result=await reader.refresh(reset);if(!result)return;setJob(result.job);setSegments(result.segments);setUpdatedAt(result.updatedAt);setPollError('');}catch(e){if(needsBearerKey(e))connectionError(e);setPollError(`更新できませんでした。取得済み字幕は保持しています。${String(e)}`);}};
  useEffect(()=>{if(!connected||!isActiveJob(job))return;const timer=setInterval(()=>void refresh(),1500);return()=>clearInterval(timer);},[connected,job?.id,job?.status]);
  const recognize=async()=>{if(!file||!model||!mediaHash||!workflow.canStart||connecting)return;setError('');let bounds;try{bounds=range.request();}catch(e){setError(String(e));return;}const {from,to}=bounds;setSetupStep(4);setUpload(true);setProgress(0);setFollow(true);pendingCancel.current=false;uploadStarted.current=Date.now();setMessage('送信中');const finish=beginMetric('upload',{fileName:file.name,engine:model.x_meeting.engineId,modelId:model.x_meeting.modelId});try{const fresh=await client.connect(applyHealth);setModels(fresh.models);const current=fresh.models.find(m=>m.id===model.id);if(!serverAcceptsJobs(fresh.health)||!current||!current.x_meeting.processingMethods.some(m=>m.id===device)||diarize&&!effectiveDiarization(true,current))throw Error('サーバーまたは選択したモデルが準備中です。準備状況を確認してください。');clearJob();const value=await client.upload(file,current,device,effectiveDiarization(diarize,model),from,to,setProgress);finish('complete',{jobId:value.job.id});jobFile.current=fileKey(file);uploadedHashes.current.set(value.job.id,mediaHash);owned.current.add(value.job.id);reader.select(value.job.id);setJob(value.job);setMessage('認識を受け付けました。');if(pendingCancel.current){const stopped=await client.request(`/api/jobs/${value.job.id}/cancel`,{});setJob(stopped.job);}await refresh();await history();}catch(e){finish('error');setError(String(e));}finally{setUpload(false);}};
@@ -138,7 +138,7 @@ function ServerRecognition({active,onTransfer,onActivity,historyHost,sourceContr
   <button className="next-step primary-action" disabled={!workflow.allowed[3]||busy} onClick={()=>openStep(3)}>次へ：動画・音声</button>
  </SetupCard>
  <SetupCard number={3} title="動画・音声" summary={file?.name??'未選択'} active={currentStep===3} disabled={busy||connecting||!workflow.allowed[3]&&!job} onOpen={()=>openStep(3)}>
-  <MediaDrop disabled={busy} onLoad={load} label="工程1の動画ドロップ領域"/>
+  <MediaDrop disabled={busy} onLoad={load} label="工程1の動画ドロップ領域">{url&&file&&<RecognitionMediaPreview file={file} url={url} player={player} onLoadedMetadata={rangeSeek.loaded} onSeeked={rangeSeek.seeked} onTimeUpdate={rangeSeek.timeUpdate} onError={()=>setError('この形式はブラウザーでプレビューできません。')}/>}</MediaDrop>
   {file&&<button className="next-step primary-action" onClick={()=>openStep(4)}>次へ：文字起こし</button>}
  </SetupCard>
  <SetupCard number={4} title={job&&!busy?"次回の文字起こし":"文字起こし"} summary={busy?'処理中':job?status[job.status]??job.status:''} active={currentStep===4} disabled={connecting||!workflow.allowed[4]&&!job} onOpen={()=>openStep(4)}>
@@ -146,7 +146,6 @@ function ServerRecognition({active,onTransfer,onActivity,historyHost,sourceContr
   <RecognitionRangeControls range={range} disabled={busy||!file} onSeek={rangeSeek.seek}/>{hashing&&<p role="status">元動画を照合中 {Math.round(hashProgress*100)}%</p>}
   <button className="primary-action start-recognition" disabled={!workflow.canStart||connecting||!range.valid||!mediaHash} onClick={()=>void recognize()}>文字起こし開始</button>
  </SetupCard>
- {url&&<video ref={player} controls src={url} preload="metadata" onLoadedMetadata={rangeSeek.loaded} onSeeked={rangeSeek.seeked} onError={()=>setError('この形式はブラウザーでプレビューできません。')}/>}
 
  </section>
  {hasResult&&<section className="recognition-output" aria-label="認識結果"><div className="row result-tools"><SaveMenu stage={1} active={active} className="primary-action"/><button disabled={upload||connecting} onClick={()=>void connect()}>サーバーへ再接続</button><button disabled={!job||upload} onClick={()=>void refresh(true)}>サーバーから結果を再取得</button>{canCancel&&<button className="cancel-action" onClick={()=>void cancel()}>認識中止</button>}</div>

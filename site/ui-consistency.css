@@ -136,3 +136,11 @@
 .server-preparation { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px; margin-bottom: 8px; background: #fff5d8; border: 1px solid #c9a340; border-radius: 6px; }
 .server-preparation progress { width: 180px; max-width: 100%; }
 .server-preparation span { flex-basis: 100%; }
+
+/* Recognition file input stays in place when replaced by its media preview. */
+.recognition .file-drop-zone.media-drop { display:flex; align-items:center; justify-content:center; min-height:96px; padding:12px; transition:background-color .12s,border-color .12s,box-shadow .12s; }
+.recognition .media-drop:focus-within:not([aria-disabled=true]),.recognition .media-drop[data-dragging=true] { background:#def5e9; border-color:#08775f; box-shadow:inset 0 0 0 2px #08775f; }
+.recognition .media-drop.has-preview { padding:0; min-height:0; border-style:solid; overflow:hidden; }
+.recognition .media-drop .recognition-media-preview { display:block; width:100%; margin:0; border-radius:4px; }
+.recognition .media-drop video.recognition-media-preview { max-height:38vh; object-fit:contain; background:#000; }
+.recognition .media-drop audio.recognition-media-preview { min-height:54px; }
