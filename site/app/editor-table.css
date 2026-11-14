@@ -63,6 +63,11 @@
 .timeline-review .visual-verdict{margin:3px 0;padding:2px 4px;line-height:1.3;}
 .review-legend{font-size:16px;color:#66746d;}
 .review-legend>summary{width:max-content;cursor:pointer;}
+.timeline-review .review-timebar.has-wave{height:72px;overflow:visible;background:#f4faf7;}
+.cut-waveform{position:absolute;inset:0;width:100%;height:100%;color:#346558;pointer-events:none;}
+.timeline-review .wave-handle{position:absolute;top:0;bottom:0;width:16px;min-width:16px;min-height:0;padding:0;transform:translateX(-50%);border:2px solid #087c68;border-radius:3px;background:#fff9;color:#07584a;cursor:ew-resize;z-index:4;touch-action:none;font-size:16px;line-height:1;}
+.timeline-review .wave-handle:focus-visible{outline:2px solid #1774dc;outline-offset:2px;}
+.cut-candidate-method{padding:2px 5px;border-radius:4px;background:#fff3cd;color:#71550d;}
 .app-shell.has-review .text-selection-bar{bottom:calc(var(--review-panel-height,180px) + 30px);}
 .app-shell.has-review .toast{bottom:calc(var(--review-panel-height,180px) + 30px);}
 .compact-ui .load-more-sentinel{padding:8px 0;min-height:0;}

@@ -25,7 +25,7 @@ import {RecognitionHistory} from './recognition-history';
 import {deletableHistory,historyPageInfo} from './recognition-history-state';
 import {useMediaRangeSeek} from './use-media-range-seek';
 import {SaveMenu,useSaveOptions} from './save-menu';
-export type RecognitionProps={active:boolean;onTransfer:(value:{vtt:string;name:string;media:File})=>void;onActivity?:(value:{busy:boolean;label:string})=>void;sourceControls?:ReactNode};
+export type RecognitionProps={active:boolean;onTransfer:(value:{vtt:string;name:string;media:File;segments?:readonly Segment[]})=>void;onActivity?:(value:{busy:boolean;label:string})=>void;sourceControls?:ReactNode};
 export function Recognition(props:RecognitionProps){
  const [source,setSource]=useState(()=>restoredWorkspace<{source:string}>('recognition-source')?.data.source==='browser'?'browser':'server'),[serverActivity,setServerActivity]=useState({busy:false,label:''}),[browserActivity,setBrowserActivity]=useState({busy:false,label:''}),[historyHost,setHistoryHost]=useState<HTMLDivElement|null>(null);
  const sourceSnapshot=useMemo(()=>({source}),[source]);useWorkspaceSave('recognition-source',sourceSnapshot);
@@ -88,7 +88,7 @@ function ServerRecognition({active,onTransfer,onActivity,historyHost,sourceContr
  const cancel=async()=>{try{if(upload){pendingCancel.current=true;setMessage('送信受付後に中止します。');return;}if(job&&(owned.current.has(job.id)||job.clientId==='transcript-cutter')){await client.request(`/api/jobs/${job.id}/cancel`,{});await refresh();}}catch(e){setError(String(e));}};
  const exportVtt=()=>segmentsToVtt(segments);
  const outputName=(extension='vtt')=>transcriptionName(job!,String(job?.fileName??file?.name??'transcript'),connectedUrl,extension);
- const handoff=()=>{if(!file||job?.status!=='complete'||!segments.length)return;if(!sourceMatches){setError('認識した元動画と同じファイルを読み込んでください。');return;}try{player.current?.pause();onTransfer({media:file,vtt:exportVtt(),name:outputName()});}catch(e){setError(String(e));}};
+ const handoff=()=>{if(!file||job?.status!=='complete'||!segments.length)return;if(!sourceMatches){setError('認識した元動画と同じファイルを読み込んでください。');return;}try{player.current?.pause();onTransfer({media:file,vtt:exportVtt(),name:outputName(),segments});}catch(e){setError(String(e));}};
  const download=(record=false)=>{if(!job)return;try{const blob=new Blob([record?JSON.stringify({schemaVersion:2,recordedAt:new Date().toISOString(),serverUrl:connectedUrl,sourceFile:job.fileName,partial:job.status!=='complete',job,clientMeasurements:processingMetrics().filter(m=>m.details.jobId===job.id),memoryNote:'Browser memory values are optional JS heap snapshots; server measurement semantics are retained in job.metadata.'},null,2):exportVtt()],{type:record?'application/json':'text/vtt;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=outputName(record?'json':'vtt');a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);}catch(e){setError(String(e));}};
  useSaveOptions(active,[
   {id:'recognition-vtt',label:job?.status==='complete'?'認識結果の字幕（VTT）':'認識途中の字幕（VTT）',description:'文字起こしで確定した字幕を保存',disabled:!segments.length,run:()=>download()},
