@@ -4,31 +4,23 @@
 #ifndef SourceDir
   #error SourceDir is required
 #endif
-#ifdef AllInOne
-  #define ProductLabel "TranscriptCutter 完全一体版"
-  #define ProductFolder "TranscriptCutter-AllInOne"
-  #define ProductId "TranscriptCutter-AllInOne-User"
-  #define OutputName "TranscriptCutter-AllInOne-Setup-v" + Version
-#else
-  #define ProductLabel "TranscriptCutter"
-  #define ProductFolder "TranscriptCutter"
-  #define ProductId "TranscriptCutter-Web-User"
-  #define OutputName "TranscriptCutter-Setup-v" + Version
+#ifndef OutputDir
+  #error OutputDir is required
 #endif
 
 [Setup]
-AppId={#ProductId}
-AppName={#ProductLabel}
+AppId=TranscriptCutter-Unified-User
+AppName=TranscriptCutter
 AppVersion={#Version}
-AppVerName={#ProductLabel} v{#Version}
+AppVerName=TranscriptCutter v{#Version}
 VersionInfoVersion={#Version}.0
-DefaultDirName={localappdata}\Programs\{#ProductFolder}
-DefaultGroupName={#ProductLabel}
+DefaultDirName={localappdata}\Programs\TranscriptCutter
+DefaultGroupName=TranscriptCutter
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir={#OutputDir}
-OutputBaseFilename={#OutputName}
+OutputBaseFilename=TranscriptCutter-v{#Version}-setup-x64
 Compression=lzma2/normal
 SolidCompression=yes
 WizardStyle=modern
@@ -43,24 +35,10 @@ MinVersion=10.0
 Name: "japanese"; MessagesFile: "compiler:Languages\Japanese.isl"
 
 [Files]
-Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SourceDir}\TranscriptCutter.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\{#ProductLabel}"; Filename: "{app}\TranscriptCutter.exe"; WorkingDir: "{app}"
+Name: "{group}\TranscriptCutter"; Filename: "{app}\TranscriptCutter.exe"; WorkingDir: "{app}"
 
-[Run]
-Filename: "{app}\TranscriptCutter.exe"; WorkingDir: "{app}"; Description: "{#ProductLabel}を起動する"; Flags: nowait postinstall skipifsilent
-
-[Code]
-function PrepareToInstall(var NeedsRestart: Boolean): String;
-begin
-  Result := '';
-#ifdef AllInOne
-  if FileExists(ExpandConstant('{app}\TranscriptCutter.exe')) and
-     not FileExists(ExpandConstant('{app}\TranscriptCutter.bundle.json')) then
-    Result := '通常版と異なるインストール先を選択してください。';
-#else
-  if FileExists(ExpandConstant('{app}\TranscriptCutter.bundle.json')) then
-    Result := '完全一体版と異なるインストール先を選択してください。';
-#endif
-end;
+; No Run/InstallDelete/UninstallDelete entries: programs are installed only.
+; Recognition data remains outside {app}, under the launcher's dedicated state directory.

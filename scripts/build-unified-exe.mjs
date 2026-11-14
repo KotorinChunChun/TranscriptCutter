@@ -7,14 +7,15 @@ import {gzipSync} from 'node:zlib';
 import {build} from 'esbuild';
 import {rcedit} from 'rcedit';
 import {inject} from 'postject';
+import {bundledServerRelease,verifyServerRelease,collectWebAssets} from './distribution-contract.mjs';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');process.chdir(root);
 if(process.platform!=='win32'||process.arch!=='x64'||!process.version.startsWith('v22.'))throw Error('Windows x64 / Node.js 22で作成してください。');
 const {version}=JSON.parse(await readFile(join(root,'package.json'),'utf8'));
 const work=join(root,'runtime','unified-build'),out=join(work,`TranscriptCutter-v${version}.exe`);await mkdir(work,{recursive:true});
 const hash=data=>createHash('sha256').update(data).digest('hex');
-const serverRoot=resolve(process.env.TC_SERVER_RELEASE||'C:/develop/Services/transcription-server/release/v0.1.10/TranscriptionServer');
+const serverRoot=resolve(process.env.TC_SERVER_RELEASE||bundledServerRelease.directory);
 const serverBuild=JSON.parse(await readFile(join(serverRoot,'BUILD.json'),'utf8')),serverSha256=hash(await readFile(join(serverRoot,'TranscriptionServer.exe')));
-if(serverBuild.version!=='0.1.10'||serverBuild.gitCommit!=='8ddfab7b95288a3b11e75735e839471c3b53a09e'||serverSha256!=='2cc4894b9c71b27d6cff3a67945c65bf3679998d7263ab82323ac2a7a8f985fe'||serverBuild.sourceDirty!==false||serverBuild.distribution!=='program-only'||serverBuild.releaseStatus!=='release'||serverBuild.bundledModels!==false||serverBuild.bundledMediaTools!==false||serverBuild.bundledRecognitionRuntimes!==false)throw Error('確定したプログラムのみのTranscriptionServer v0.1.10が必要です。');
+verifyServerRelease(serverBuild,await readFile(join(serverRoot,'TranscriptionServer.exe')));
 execFileSync(process.execPath,[join(root,'scripts/build-web.mjs')],{stdio:'inherit'});
 const owner=join(work,'TranscriptCutterProcess.exe');
 execFileSync('rustc',['--edition','2024','--target','x86_64-pc-windows-msvc','-C','target-feature=+crt-static','-C','opt-level=s','-C','panic=abort','-D','warnings',join(root,'packaging/process-owner.rs'),'-o',owner],{stdio:'inherit'});
@@ -26,7 +27,7 @@ add('TranscriptCutterProcess.exe',ownerBytes);add('TranscriptCutter.bundle.json'
 async function inventory(directory){for(const entry of await readdir(directory,{withFileTypes:true})){const path=join(directory,entry.name),name=relative(serverRoot,path).replaceAll('\\','/');if(entry.isSymbolicLink())throw Error('リンクは同梱しません。');if(/(?:^|\/)(?:models?|runtime|data|settings|__pycache__|\.git)(?:\/|$)/i.test(name)||/\.(?:mp4|wav|vtt|sqlite|db|gguf|bin|pth|pt|onnx|key)$/i.test(name)||/(?:ffmpeg|ffprobe|python)\.exe$/i.test(name))throw Error('プログラム以外の同梱候補: '+name);if(entry.isDirectory())await inventory(path);else add('transcription-server/'+name,await readFile(path));}}
 await inventory(serverRoot);
 const compressed=gzipSync(JSON.stringify(files),{level:9}),payload={version,serverVersion:serverBuild.version,sha256:hash(compressed),gzip:compressed.toString('base64')};
-const assets={};for(const name of ['index.html','app.js','app.css','browser-whisper-worker.js'])assets['/'+name]=(await readFile(join(root,'dist-web',name))).toString('base64');
+const assets=await collectWebAssets(join(root,'dist-web'));
 const lock=JSON.parse(await readFile(join(root,'package-lock.json'),'utf8'));let licenses=`TranscriptCutter v${version}\nTranscriptionServer v${serverBuild.version}\nNode.js source: https://nodejs.org/download/release/${process.version}/\n\n`;
 for(const [name,path]of [['Node.js',join(dirname(process.execPath),'LICENSE')],...['react','react-dom','scheduler','lucide-react','mediabunny','@noble/hashes'].map(name=>[name,join(root,'node_modules',name,'LICENSE')])]){const pkg=lock.packages['node_modules/'+name];licenses+=`\n===== ${name}${pkg?' '+pkg.version+'\nSource: '+pkg.resolved:''} =====\n`+await readFile(path,'utf8')+'\n';}
 licenses+='\nRust standard library\n'+await readFile(join(execFileSync('rustc',['--print','sysroot'],{encoding:'utf8'}).trim(),'share/doc/rust/COPYRIGHT-library.html'),'utf8');

@@ -1,1 +1,17 @@
-throw Error('インストーラーの分割配布は廃止しました。npm run check:exe を使用してください。');
+import assert from 'node:assert/strict';
+import {readFile,writeFile} from 'node:fs/promises';
+import {resolve,join,dirname} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {execFileSync} from 'node:child_process';
+import {sha256,verifyAcceptedExecutable,installerName} from './distribution-contract.mjs';
+const root=resolve(dirname(fileURLToPath(import.meta.url)),'..'),{version}=JSON.parse(await readFile(join(root,'package.json'),'utf8'));
+const source=process.env.TC_ACCEPT_EXE||join(root,'runtime','unified-build',`TranscriptCutter-v${version}.exe`),exe=await readFile(source),build=JSON.parse(await readFile(source+'.json','utf8')),accepted=JSON.parse(await readFile(source+'.acceptance.json','utf8'));
+verifyAcceptedExecutable(build,accepted,exe,version);
+const file=process.env.TC_ACCEPT_INSTALLER||JSON.parse(await readFile(join(root,'runtime','unified-build','installer-path.json'),'utf8')).file,bytes=await readFile(file),receipt=JSON.parse(await readFile(file+'.json','utf8'));
+assert(file.endsWith(installerName(version)));assert.equal(receipt.version,version);assert.equal(receipt.distribution,'unified-user-installer');assert.equal(receipt.sha256,sha256(bytes));assert.equal(receipt.bytes,bytes.length);assert.equal(bytes.subarray(0,2).toString(),'MZ');
+assert.equal(receipt.executable.sha256,sha256(exe));assert.equal(receipt.executable.bytes,exe.length);assert.equal(receipt.executable.gitCommit,build.gitCommit);assert.deepEqual(receipt.server,build.server);assert.equal(receipt.installScope,'current-user');assert.equal(receipt.autoRun,false);assert.equal(receipt.dataPreserved,true);
+assert.equal(receipt.installerScriptSha256,sha256(await readFile(join(root,'packaging','TranscriptCutter.iss'))));
+const resource=JSON.parse(execFileSync('pwsh',['-NoProfile','-Command','(Get-Item -LiteralPath $env:TC_INSTALLER_RESOURCE).VersionInfo | Select-Object FileVersion,ProductVersion | ConvertTo-Json -Compress'],{env:{...process.env,TC_INSTALLER_RESOURCE:file},encoding:'utf8',windowsHide:true}));
+assert.equal(resource.FileVersion,version+'.0');assert.match(resource.ProductVersion,new RegExp('^'+version.replaceAll('.','\\.')+'(?:\\.0)?$'));
+const report={version,file,sha256:receipt.sha256,source:build.gitCommit,executableSha256:build.sha256,checkedAt:new Date().toISOString(),passed:['installer-sha256','installer-pe-version','accepted-exe-link','server-release-link','current-user-package','no-auto-run','data-outside-program'],actualInstall:'未実施。既存のインストール先・ユーザーデータ・レジストリは変更しない。'};
+await writeFile(file+'.acceptance.json',JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify(report,null,2));
