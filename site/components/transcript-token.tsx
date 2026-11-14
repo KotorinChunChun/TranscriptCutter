@@ -91,13 +91,13 @@ export const TranscriptToken = memo(function TranscriptToken({ token, spans, sho
     const chunkStart = Math.round(token.start + Math.max(0, token.end - token.start) * Math.min(1, Math.max(0, chunk.from - token.from) / Math.max(1, token.to - token.from)));
     const seekTitle = `推定 ${formatTime(chunkStart, true)} から再生`;
     const title = canSeekWithLeftClick
-      ? `クリックで${seekTitle}${chunk.deleted ? " · 右クリックで復元" : ""}`
+      ? `クリックで${seekTitle}${chunk.deleted ? " · 右クリックで操作" : ""}`
       : canRestore
-        ? `クリックまたは右クリックで「${chunk.text}」を復元`
+        ? `クリックで「${chunk.text}」を復元 · 右クリックで操作`
         : canDelete
           ? wordTitle
           : !deleting
-            ? `動画・音声を追加すると再生できます${chunk.deleted ? " · 右クリックで復元" : ""}`
+            ? `動画・音声を追加すると再生できます${chunk.deleted ? " · 右クリックで操作" : ""}`
             : "";
     const activate = () => {
       if (shouldIgnoreClick()) return;

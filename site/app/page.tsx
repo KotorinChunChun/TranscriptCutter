@@ -1,3 +1,5 @@
+import {TranscriptContextMenu} from '@/components/transcript-context-menu';
+import {readTranscriptSelection,type TranscriptSelection} from '@/src/lib/text-selection';
 import {WordTimingInput} from '@/components/word-timing-input';
 import {attachWordTimings,readWordSegments} from '@/src/lib/word-timing';
 import {textCutCandidate} from '@/src/lib/editor';
@@ -86,6 +88,8 @@ export default function Home({active=true,view:requestedView,onViewChange,onWork
  const [selectedLines,setSelectedLines]=useState<Set<string>>(new Set());const [visibleCount,setVisibleCount]=useState(24);
  const [renameTarget,setRenameTarget]=useState("");const [renameValue,setRenameValue]=useState("");
  const [correctionCueIds,setCorrectionCueIds]=useState<string[]>([]);
+ const [contextMenu,setContextMenu]=useState<{x:number;y:number;selection:TranscriptSelection|null;restore?:TextSpan}|null>(null);
+ const closeContextMenu=useCallback(()=>setContextMenu(null),[]);
  const [speakerSelection,setSpeakerSelection]=useState<{spans:TextSpan[];text:string}|null>(null);
  const [followPlayback,setFollowPlayback]=useState(true);
  const [fillerTerms,setFillerTerms]=useState("えっと、えーと、えーっと、まあ");const [fillerCandidates,setFillerCandidates]=useState<FillerCandidate[]>([]);const [chosenFillers,setChosenFillers]=useState<Set<string>>(new Set());
@@ -97,6 +101,7 @@ export default function Home({active=true,view:requestedView,onViewChange,onWork
  const [removedReview,setRemovedReview]=useState(false);
  const [bundleExport,setBundleExport]=useState(false),[archiveBusy,setArchiveBusy]=useState(false);
  const [mediaExportBusy,setMediaExportBusy]=useState(false),[aiCleanupBusy,setAiCleanupBusy]=useState(false);
+ useEffect(closeContextMenu,[doc,state,view,active,modal,mediaExportBusy,closeContextMenu]);
  useEffect(()=>{onWorkspaceBusyChange?.(mediaExportBusy||aiCleanupBusy||archiveBusy);},[mediaExportBusy,aiCleanupBusy,archiveBusy,onWorkspaceBusyChange]);
  const [exportTimeline,setExportTimeline]=useState<"original"|"edited">("original");const [speakerFormat,setSpeakerFormat]=useState<"voice"|"prefix">("voice");
  const vttInput=useRef<HTMLInputElement>(null),mediaInput=useRef<HTMLInputElement>(null),searchInput=useRef<HTMLInputElement>(null),sentinel=useRef<HTMLDivElement>(null);
@@ -109,7 +114,8 @@ export default function Home({active=true,view:requestedView,onViewChange,onWork
  const undo=useCallback(()=>{setHistory(h=>h.past.length?{past:h.past.slice(0,-1),present:h.past[h.past.length-1],future:[h.present,...h.future]}:h);setSelectedLines(new Set());setToast(null);clearSelection();},[clearSelection]);
  const redo=useCallback(()=>{setHistory(h=>h.future.length?{past:[...h.past,h.present],present:h.future[0],future:h.future.slice(1)}:h);setSelectedLines(new Set());setToast(null);clearSelection();},[clearSelection]);
  const toastCanUndo=!!toast?.undoFrom&&history.past.at(-1)===toast.undoFrom;
- const deleteTextSelection=useCallback(()=>{if(!textSelection?.spans.length)return;apply(s=>deleteTextSpans(doc,s,textSelection.spans));notify(`選択した${textSelection.characterCount}文字を削除しました`,true);clearSelection();setSelectedLines(new Set());},[apply,clearSelection,doc,notify,textSelection]);
+ const deleteSelection=useCallback((selection:TranscriptSelection)=>{if(!selection.spans.length)return;apply(s=>deleteTextSpans(doc,s,selection.spans));notify(`選択した${selection.characterCount}文字を削除しました`,true);clearSelection();setSelectedLines(new Set());},[apply,clearSelection,doc,notify]);
+ const deleteTextSelection=useCallback(()=>{if(textSelection)deleteSelection(textSelection);},[deleteSelection,textSelection]);
  const restoreText=useCallback((span:TextSpan)=>{apply(s=>restoreTextSpans(doc,s,[span]));notify("選んだテキストを復元しました",true);clearSelection();},[apply,clearSelection,doc,notify]);
  const mergeOptions=useMemo(()=>({merge:merging,maxGapMs:maxGap==="none"?null:Number(maxGap)*1000}),[merging,maxGap]);
  const displayMergeOptions=useMemo(()=>({...mergeOptions,mergeUnknown:true}),[mergeOptions]);
@@ -126,8 +132,9 @@ export default function Home({active=true,view:requestedView,onViewChange,onWork
  useEffect(()=>{playback.pause();},[active,view]);
  const gaps=useMemo(()=>reviewGaps(doc.cues,mediaDuration),[doc,mediaDuration]);
  const gapByCue=useMemo(()=>new Map(gaps.filter(g=>g.nextCueId).map(g=>[g.nextCueId!,g])),[gaps]);
- const reviewSelection=useMemo(()=>reviewRange?[reviewRange]:reviewText.length?timeRangesForText(doc,reviewText):[],[doc,reviewText,reviewRange]);
- const reviewMethod=reviewRange?'手動で調整':reviewText.length?[...new Set(reviewText.map(s=>textCutCandidate(doc.cueById.get(s.cueId)!,s.from,s.to).method))].join('・'):undefined;
+ const reviewTextValid=reviewText.every(span=>{const cue=doc.cueById.get(span.cueId);return !!cue&&span.from>=0&&span.to>span.from&&span.to<=cue.text.length;});
+ const reviewSelection=useMemo(()=>!reviewTextValid?[]:reviewRange?[reviewRange]:reviewText.length?timeRangesForText(doc,reviewText):[],[doc,reviewText,reviewRange,reviewTextValid]);
+ const reviewMethod=!reviewTextValid?undefined:reviewRange?'手動で調整':reviewText.length?[...new Set(reviewText.map(s=>textCutCandidate(doc.cueById.get(s.cueId)!,s.from,s.to).method))].join('・'):undefined;
  const previewStop=useRef<number|null>(null);
  useEffect(()=>{const media=mediaRef.current;if(!media)return;const stop=()=>{if(previewStop.current!==null&&media.currentTime*1000>=previewStop.current){previewStop.current=null;playback.pause();}};media.addEventListener('timeupdate',stop);return()=>media.removeEventListener('timeupdate',stop);},[mediaUrl,playback.pause]);
  const previewReview=(range:TimeRange)=>{previewStop.current=range.end;playback.playFrom(range.start,'original');};
@@ -227,7 +234,8 @@ export default function Home({active=true,view:requestedView,onViewChange,onWork
    if(learn){const pairs=changes.map(change=>correctionPair(doc.cueById.get(change.cueId)?.text??'',change.text)).filter((p):p is {from:string;to:string}=>!!p);if(pairs.length)learnTermPairs(pairs);}stopAnalysis();apply(()=>next);setModal(null);setQuery("");setSelectedLines(new Set());setFillerCandidates([]);setSilenceCandidates([]);clearSelection();notify("字幕を修正しました。音声とカット時刻は保持しています。",true);
   }catch(e){setError(e instanceof Error?e.message:"字幕を修正できませんでした。");}
  };
- const openSelectionSpeaker=()=>{if(!textSelection?.spans.length)return;playback.pause();setSpeakerSelection({spans:textSelection.spans.map(span=>({...span})),text:textSelection.text});setError("");setModal("selection-speaker");};
+ const editSelectionSpeaker=(selection:TranscriptSelection)=>{if(!selection.spans.length)return;playback.pause();setSpeakerSelection({spans:selection.spans.map(span=>({...span})),text:selection.text});setError("");setModal("selection-speaker");};
+ const openSelectionSpeaker=()=>{if(textSelection)editSelectionSpeaker(textSelection);};
  const saveSelectionSpeaker=(name:string,scope:SpeakerSelectionScope)=>{
   if(!speakerSelection)return;
   try{const canonical=name==="話者不明"?null:atoms.find(atom=>alias(atom)===name)??name;const next=changeSelectionSpeaker(doc,state,speakerSelection.spans,canonical,{scope});
@@ -318,7 +326,6 @@ export default function Home({active=true,view:requestedView,onViewChange,onWork
   {(hasTranscript||mediaFile)&&<button className="button secondary mobile-menu-button" aria-label="動画・話者の設定" aria-expanded={sidebarOpen} onClick={()=>setSidebarOpen(!sidebarOpen)}><Menu size={20}/>動画・話者</button>}
   <div className="heading-actions"><AddMenu disabled={saveBusy} label="字幕を追加" items={[{label:'VTTを貼り付け',run:()=>setPasteOpen(true)},{label:'単語時刻JSONを追加',disabled:!hasTranscript,run:()=>setWordInput(true)}]}/><button className="button secondary" disabled={mediaExportBusy||!cleanupSources.length} onClick={()=>setModal('cleanup')}>字幕を整える</button><SaveMenu stage={3} active={active} className="button primary"/></div>
  </div>}
- {downloadFile&&<div className="recent-export"><span>直近の書き出し：<strong>{downloadFile.name}</strong></span><button className="button secondary small" onClick={()=>setModal("download")}><ArrowDownToLine size={14}/>保存方法を開く</button></div>}
  {error&&<div className="error-banner" role="alert"><AlertCircle size={18}/><span>{error}</span><button className="icon-button" aria-label="エラーを閉じる" onClick={()=>setError("")}><X size={16}/></button></div>}
  {view!=="compare"&&warnings.length>0&&<details className="warning-details"><summary>読み込みメモ {warnings.length}件</summary><ul>{warnings.map((warning,index)=><li key={index}>{warning}</li>)}</ul></details>}
  {view==="compare"?<section className="workspace-scroll-panel comparison-scroll-panel" aria-label="字幕比較のスクロール領域" tabIndex={0}><VttComparison active={active} onSample={loadComparisonDemo} canSample={!hasTranscript&&!comparison&&!mediaFile} session={comparison} onChange={setComparison} onAddFiles={chooseComparison} onGenerate={()=>setModal('cleanup')} onApply={applyComparison} onExportVtt={downloadComparisonVtt} onSeek={seek} canPlay={!!mediaFile} currentMs={playback.currentMs} durationMs={mediaDuration??comparisonEnd} playing={playback.playing} onTogglePlayback={()=>playback.playing?playback.pause():playback.playFrom(playback.currentMs,'edited')} onScrub={ms=>{if(playback.playing)playback.playFrom(ms,'edited');else if(mediaRef.current)mediaRef.current.currentTime=ms/1000;}} busy={saveBusy}/></section>:!hasTranscript?<section className="workspace-empty" aria-label="字幕・元動画のドロップ領域"><span>字幕(vtt)・動画（MP4・WebM）・プロジェクトをドロップ</span>{!mediaFile&&!comparison&&<button className="button secondary empty-sample" disabled={saveBusy} onClick={resetSample}>サンプル</button>}</section>:<>
@@ -327,7 +334,16 @@ export default function Home({active=true,view:requestedView,onViewChange,onWork
  <div className="editor-toolbar"><div className="action-group"><div className="interaction-mode-switch" role="group" aria-label="本文のクリック操作"><button className={`mode-button${interactionMode==="play"?" active":""}`} aria-pressed={interactionMode==="play"} disabled={!mediaFile||mediaExportBusy} title={mediaFile?"左クリックでその位置から再生。ドラッグで範囲選択":"動画・音声を追加すると使えます"} onClick={()=>{clearSelection();setInteractionMode("play");}}><Play size={15}/>再生モード</button><button className={`mode-button${interactionMode==="delete"?" active":""}`} aria-pressed={interactionMode==="delete"} title="左クリックで単語を削除。中クリックでその位置から再生" onClick={()=>{clearSelection();setInteractionMode("delete");}}><Scissors size={15}/>削除モード</button></div><button className="button secondary small" onClick={()=>{setModal("fillers");scanFillers();}}><WandSparkles size={16}/>フィラーを削除</button><button className="button secondary small" onClick={()=>{setModal("silence");setError("");}}><AudioLines size={16}/>無音・空白を探す</button></div><div className="undo-group"><button className="icon-button" aria-label="元に戻す" title="元に戻す（Ctrl Z）" disabled={!history.past.length} onClick={undo}><Undo2 size={17}/></button><button className="icon-button" aria-label="やり直す" title="やり直す（Ctrl Shift Z）" disabled={!history.future.length} onClick={redo}><Redo2 size={17}/></button><button className="button ghost small" onClick={()=>setModal("cuts")}><Scissors size={14}/>カット記録 {ranges.length}</button></div></div>
  {selectedLines.size>0&&<div className="selection-bar" role="status"><strong>{selectedLines.size}行を選択中</strong><span>元の字幕行単位で時刻を記録</span><button className="button danger small" onClick={removeSelectedLines}><Trash2 size={14}/>選択した行を削除</button><button className="icon-button" aria-label="行選択を解除" onClick={()=>setSelectedLines(new Set())}><X size={16}/></button></div>}
  <div className="content-meta"><div className="content-meta-main"><span className="result-count">{view==="chat"?`${displayedLineCount.toLocaleString()}行`:"編集済みVTT"}</span><div className="compact-merge-toggle"><span>連続発言を結合</span><button className={`toggle${merging?" checked":""}`} role="switch" aria-label="同じ話者の連続発言を結合" aria-checked={merging} onClick={()=>setMerging(!merging)}><span className="toggle-knob"/></button></div></div><div className="reading-controls">{filter!=="all"&&<button className="filter-chip" onClick={()=>setFilter("all")}>{filter==="unknown"?"話者不明":alias(filter)}<X size={12}/></button>}<label className="deleted-toggle"><input type="checkbox" checked={showDeleted} onChange={e=>setShowDeleted(e.target.checked)}/>削除箇所を表示</label><button className={`icon-button text-size-button${largeText?" selected":""}`} aria-label="文字を大きくする" aria-pressed={largeText} onClick={()=>setLargeText(!largeText)}>Aa</button></div></div>
- {view==="chat"?<section className="conversation workspace-scroll-panel" tabIndex={0} data-interaction-mode={interactionMode} data-show-times={showTimes} aria-label="編集できる文字起こし" ref={transcriptRef} {...selectionHandlers} onPointerDownCapture={event=>{selectionHandlers.onPointerDownCapture(event);if(event.button===0&&event.target instanceof Element&&event.target.closest("[data-transcript-span]"))playback.pause();}}>
+ {view==="chat"?<section className="conversation workspace-scroll-panel" tabIndex={0} data-interaction-mode={interactionMode} data-show-times={showTimes} aria-label="編集できる文字起こし" onContextMenuCapture={event=>{
+ if(event.target instanceof Element&&event.target.closest('input,textarea,select,[contenteditable=true]'))return;
+ event.preventDefault();event.stopPropagation();if(mediaExportBusy||aiCleanupBusy)return;
+ const selected=transcriptRef.current?readTranscriptSelection(transcriptRef.current):null;
+ const selection=selected?{...selected,spans:selected.spans.map(s=>({...s}))}:null;
+ const target=event.target instanceof Element?event.target.closest<HTMLElement>('[data-transcript-span][data-text-deleted=true]'):null;
+ const restore=target?{cueId:target.dataset.cueId!,from:Number(target.dataset.textFrom),to:Number(target.dataset.textTo)}:undefined;
+ const box=(event.target as HTMLElement).getBoundingClientRect();
+ setContextMenu({x:event.clientX||box.left+12,y:event.clientY||box.bottom,selection,restore});
+ }} ref={transcriptRef} {...selectionHandlers} onPointerDownCapture={event=>{selectionHandlers.onPointerDownCapture(event);if(event.button===2)event.preventDefault();if(event.button===0&&event.target instanceof Element&&event.target.closest("[data-transcript-span]"))playback.pause();}}>
  <div className="conversation-columns" aria-hidden="true"><span>話者</span><span>時刻</span><span>本文</span></div>
  {visible.map(group=>{const playingGroup=group.cueIds.some(id=>activeCueIds.has(id));const groupTransportActive=!!mediaFile&&playback.currentMs>=group.start&&playback.currentMs<group.end;const revealDeleted=showDeleted||(originalPreview&&playingGroup);const palette=colorFor(group.canonicalSpeaker);const ambiguous=isCompound(group.canonicalSpeaker)||group.isMultiVoice||!group.canonicalSpeaker;const groupIndex=groupIndices.get(group.id)??-1;const firstGap=group.lines[0]?gapByCue.get(group.lines[0].cueId):undefined;return <Fragment key={group.id}>
  {renderFilterGap(filterContext.before.get(group.id))}{firstGap&&renderReviewGap(firstGap)}
@@ -353,6 +369,12 @@ export default function Home({active=true,view:requestedView,onViewChange,onWork
  </main></div>
  {reviewTarget&&<TimelineReview target={reviewTarget} file={mediaFile} selection={reviewSelection} candidateLabel={reviewMethod} onPreview={previewReview} cuts={ranges} currentMs={playback.currentMs} onSelect={chooseReviewRange} onDelete={deleteReview} onSeek={positionReview} onClose={()=>{setReviewTarget(null);setReviewRange(null);setReviewText([]);}} disabled={mediaExportBusy} onVerdict={v=>setVisualResults(prev=>({...prev,[`gap-${reviewTarget.start}-${reviewTarget.end}`]:v}))}/>}
  {dragging&&<div className="drop-overlay"><div className="drop-modal"><div className="drop-icon"><Upload size={36}/></div><h2>ここにファイルをドロップ</h2><p>VTTは最大3つまで同時に比較できます。編集プロジェクト・動画・音声は1つずつ読み込みます。</p></div></div>}
+ {contextMenu&&<TranscriptContextMenu x={contextMenu.x} y={contextMenu.y} onClose={closeContextMenu} items={[
+ {label:'話者を変更',disabled:!contextMenu.selection,run:()=>{if(contextMenu.selection)editSelectionSpeaker(contextMenu.selection);}},
+ {label:'選択範囲を削除',disabled:!contextMenu.selection,run:()=>{if(contextMenu.selection)deleteSelection(contextMenu.selection);}},
+ {label:'1手戻す',disabled:!history.past.length,run:undo},
+ ...(contextMenu.restore?[{label:'この文字を復元',run:()=>restoreText(contextMenu.restore!)}]:[])
+ ]}/>}
  {textSelection&&<div className="text-selection-bar" role="region" aria-label="テキストの選択操作" onPointerDown={e=>e.preventDefault()}><strong>{textSelection.characterCount}文字を選択</strong><button className="button secondary small" onClick={openSelectionSpeaker}><UserRound size={15}/>話者を変更</button><button className="button danger small" aria-keyshortcuts="Delete Backspace" title="選択範囲を削除（Delete／Backspace）" onClick={deleteTextSelection}><Trash2 size={15}/>選択範囲を削除</button><button className="icon-button" aria-label="テキストの選択を解除" onClick={()=>{clearSelection();setReviewText([]);setReviewRange(null);}}><X size={16}/></button></div>}
  {toast&&<div className="toast" role="status" onMouseEnter={()=>setToastPaused(true)} onMouseLeave={()=>setToastPaused(false)} onFocus={()=>setToastPaused(true)} onBlur={e=>{if(!e.currentTarget.contains(e.relatedTarget as Node|null))setToastPaused(false);}}><Check size={17}/><span>{toast.text}</span>{toastCanUndo&&<button className="toast-undo" aria-label="直前の編集を元に戻す" onClick={()=>{undo();notify("直前の編集を元に戻しました");}}><Undo2 size={15}/>元に戻す</button>}<button className="icon-button" aria-label="通知を閉じる" onClick={()=>setToast(null)}><X size={14}/></button></div>}
  {wordInput&&<WordTimingInput onLoad={applyWordTiming} onClose={()=>setWordInput(false)}/>}
