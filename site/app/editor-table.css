@@ -72,6 +72,21 @@
 .transcript-context-menu>button{font:inherit;text-align:left;white-space:nowrap;padding:7px 12px;border:0;border-radius:3px;background:transparent;color:#214f43;}
 .transcript-context-menu>button:hover:not(:disabled),.transcript-context-menu>button:focus-visible{background:#e5f2eb;outline:2px solid #278b72;outline-offset:-2px;}
 .transcript-context-menu>button:disabled{color:#86978f;cursor:default;}
+.compact-ui.pane-editor:not(.compare-mode) .workspace-toolbar{gap:6px;flex-wrap:wrap;margin:3px 0;}
+.editor-view-controls{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0;}
+.editor-view-controls .view-tabs{flex-shrink:0;}
+.editor-view-controls .reading-controls{display:flex;gap:4px;align-items:center;}
+.reading-toggle{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:35px;padding:4px 7px;border:1px solid #b8ccc1;border-radius:5px;background:#fff;color:#496b5a;font:inherit;font-size:16px;white-space:nowrap;}
+.reading-toggle.active{background:#e2f1e9;border-color:#318770;color:#08614f;}
+.reading-toggle .toggle{height:18px;width:30px;padding:3px;}
+.reading-toggle .toggle-knob{width:12px;height:12px;}
+.reading-toggle .toggle.checked .toggle-knob{transform:translateX(12px);}
+.compact-ui.pane-editor:not(.compare-mode) .workspace-toolbar .toolbar-right{margin-left:auto;gap:5px;}
+.compact-ui.pane-editor:not(.compare-mode) .editor-toolbar{align-items:center;gap:4px 6px;}
+.compact-ui.pane-editor:not(.compare-mode) .editor-toolbar .action-group{gap:4px;}
+.compact-ui.pane-editor:not(.compare-mode) .editor-toolbar .undo-group{margin-left:auto;gap:4px;}
+.compact-ui.pane-editor:not(.compare-mode) .sidebar.resizable-sidebar{bottom:auto;height:calc(100dvh - 68px);min-width:min(240px,calc(100vw - 16px));min-height:min(220px,calc(100dvh - 68px));max-width:calc(100vw - 16px);max-height:calc(100dvh - 68px);resize:both;overflow:auto;}
+.compact-ui.pane-editor .resizable-sidebar .sidebar-media .media-player{max-height:min(60dvh,720px);}
 .app-shell.has-review .text-selection-bar{bottom:calc(var(--review-panel-height,180px) + 30px);}
 .app-shell.has-review .toast{bottom:calc(var(--review-panel-height,180px) + 30px);}
 .compact-ui .load-more-sentinel{padding:8px 0;min-height:0;}
