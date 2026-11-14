@@ -8,6 +8,7 @@ import type { InputAudioTrack, InputVideoTrack, StreamTargetChunk } from "mediab
 import { buildMediaCutPlan, buildRemovedMediaPlan } from "./media-plan";
 import type { KeepSegment, MediaCutInput } from "./media-plan";
 import {measure} from '../../processing-metrics';
+import {normalizeMutes,mutePcm,type MuteRange} from './audio-mute';
 
 export interface MediaFileInspection {
   durationMs: number;
@@ -28,6 +29,7 @@ export interface MediaFileInspection {
 
 export interface CutMediaProgress { fraction: number; stage: string; outputBytes: number }
 export interface RenderCutMediaOptions {
+  mutes?: readonly MuteRange[];
   file: File;
   cuts: readonly MediaCutInput[];
   /** Discard all source media after the input VTT's last cue end. */
@@ -316,7 +318,7 @@ async function* videoSamplesForRange(track: InputVideoTrack, range: KeepSegment,
   }
 }
 
-async function* audioSamplesForRange(track: InputAudioTrack, range: KeepSegment, signal?: AbortSignal): AsyncGenerator<AudioSample> {
+async function* audioSamplesForRange(track: InputAudioTrack, range: KeepSegment, signal?: AbortSignal, mutes:readonly MuteRange[]=[]): AsyncGenerator<AudioSample> {
   const sink = new AudioSampleSink(track);
   const start = range.start / 1000, end = range.end / 1000, outputStart = range.outputStart / 1000;
   const iterator = sink.samples(start, end);
@@ -327,6 +329,14 @@ async function* audioSamplesForRange(track: InputAudioTrack, range: KeepSegment,
     const last = Math.min(sample.numberOfFrames, Math.floor((end - sample.timestamp) * sample.sampleRate + 1e-5));
     if (last <= first) return null;
     const trimmed = sample.trim(first, last);
+    const originalStart=trimmed.timestamp*1000;
+    if(mutes.some(r=>r.start<originalStart+trimmed.duration*1000&&r.end>originalStart)){
+      const pcm=new Float32Array(trimmed.numberOfFrames*trimmed.numberOfChannels);
+      trimmed.copyTo(pcm,{planeIndex:0,format:'f32'});
+      mutePcm(pcm,originalStart,trimmed.sampleRate,trimmed.numberOfChannels,mutes);
+      const silent=new AudioSample({data:pcm,format:'f32',sampleRate:trimmed.sampleRate,numberOfChannels:trimmed.numberOfChannels,timestamp:trimmed.timestamp});
+      trimmed.close();silent.setTimestamp(Math.max(outputStart,outputStart+silent.timestamp-start));return silent;
+    }
     trimmed.setTimestamp(Math.max(outputStart, outputStart + trimmed.timestamp - start));
     return trimmed;
   };
@@ -412,7 +422,7 @@ async function renderCutMediaImpl(options: RenderCutMediaOptions): Promise<CutMe
     for (const range of plan.keep) {
       checkAbort(signal);
       const videoIterator = videoTrack ? videoSamplesForRange(videoTrack, range, signal) : null;
-      const audioIterator = audioTrack ? audioSamplesForRange(audioTrack, range, signal) : null;
+      const audioIterator = audioTrack ? audioSamplesForRange(audioTrack, range, signal, normalizeMutes(options.mutes??[])) : null;
       let firstVideoInRange = true;
       try {
         let nextVideo = videoIterator ? await videoIterator.next() : null;

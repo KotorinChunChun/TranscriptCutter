@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import ts from "typescript";
 
 const source = (await readFile(new URL("../src/lib/transcript-playback.ts", import.meta.url), "utf8"))
+  .replace("from './audio-mute'", `from "${new URL("../src/lib/audio-mute.ts", import.meta.url).href}"`)
   .replace('from "./media-plan"', `from "${new URL("../src/lib/media-plan.ts", import.meta.url).href}"`);
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 const { buildPlaybackTimeline, resolvePlaybackPosition, buildTimedItemIndex, findActiveTimedItems, createTranscriptPlaybackController } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`);

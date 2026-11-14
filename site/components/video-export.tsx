@@ -1,3 +1,4 @@
+import type {MuteRange} from '../src/lib/audio-mute';
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -25,6 +26,7 @@ type CompletedExport = {
 };
 export type VideoExportDialogProps = {
   open: boolean;
+  mutes?: readonly MuteRange[];
   file: File;
   cuts: readonly CutRecord[];
   subtitleEndMs: number;
@@ -56,7 +58,7 @@ const requestBinaryDownload = (url: string, fileName: string) => {
  * Keep this component mounted while its source File remains selected. Closing
  * hides the dialog and cancels work, but retains a completed binary result.
  */
-export function VideoExportDialog({ open, file, cuts, subtitleEndMs, onClose, onBusyChange, preserveTail=true, bundle, removedOnly=false }: VideoExportDialogProps) {
+export function VideoExportDialog({ open, file, cuts, subtitleEndMs, onClose, onBusyChange, preserveTail=true, bundle, removedOnly=false, mutes=[] }: VideoExportDialogProps) {
   const [inspection, setInspection] = useState<{ source: File; media: Inspection } | null>(null);
   const [inspecting, setInspecting] = useState(false);
   const [inspectionError, setInspectionError] = useState("");
@@ -83,7 +85,7 @@ export function VideoExportDialog({ open, file, cuts, subtitleEndMs, onClose, on
   busyCallback.current = onBusyChange;
   const info = inspection?.source === file ? inspection.media : null;
   const result = completed?.source === file ? completed : null;
-  const signature = useMemo(() => JSON.stringify([cutKey(cuts, subtitleEndMs),preserveTail,bundleMode,removedOnly]), [cuts, subtitleEndMs,preserveTail,bundleMode,removedOnly]);
+  const signature = useMemo(() => JSON.stringify([cutKey(cuts, subtitleEndMs),preserveTail,bundleMode,removedOnly,mutes]), [cuts, subtitleEndMs,preserveTail,bundleMode,removedOnly,mutes]);
   const resultChanged = !!result && result.cutSignature !== signature;
 
   const planning = useMemo(() => {
@@ -204,7 +206,7 @@ export function VideoExportDialog({ open, file, cuts, subtitleEndMs, onClose, on
     try {
       await disposeResult();
       if (controller.signal.aborted || version !== renderVersion.current || sourceRef.current !== source) return;
-      const media = await renderCutMedia({
+      const media = await renderCutMedia({mutes:removedOnly?[]:mutes,
         file: source,
         cuts: snapshot,
         subtitleEndMs: snapshotSubtitleEndMs,

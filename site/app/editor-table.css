@@ -101,3 +101,8 @@
  .compact-ui.pane-editor:not(.compare-mode) .workspace-toolbar{flex-wrap:wrap;}
  .timeline-review{max-height:45%;}
 }
+.compact-ui.pane-editor:not(.compare-mode) .line-visual-actions{grid-column:4;grid-row:1;display:flex;flex-direction:column;align-items:center;}
+.compact-ui.pane-editor:not(.compare-mode) .conversation[data-show-times=false] .line-visual-actions{grid-column:3;}
+.line-thumbnail-button{width:24px;height:24px;display:grid;place-items:center;color:#286b4e;}
+.time-mute{position:absolute;top:0;bottom:0;background:#d4aa4280;border-block:2px solid #a36b06;pointer-events:none;}
+.mute-status{color:#996300;font-size:16px;}

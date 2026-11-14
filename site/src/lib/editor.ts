@@ -1,4 +1,5 @@
 import type { Cue } from "./vtt";
+import {normalizeMutes,type MuteRange} from './audio-mute';
 import {validatedWordTiming,wordCutCandidate} from './word-timing';
 
 export const DEFAULT_FILLERS = ["えっと", "えーと", "えーっと", "まあ"];
@@ -19,6 +20,7 @@ export interface CutRecord {
   text?: string; sourceCueIds: string[]; tokenIds?: string[]; lineIds?: string[]; spans?: TextSpan[];
 }
 export interface EditorState {
+  mutes?: MuteRange[];
   keepTail?: boolean;
   cuts: CutRecord[]; aliases: Record<string, string>; speakerOverrides: Record<string, string | null>; forcedJoins: string[];
   /** Immutable document revisions travel with the same undo/redo snapshot as cuts. */
@@ -997,6 +999,7 @@ export function importProjectJson(raw: string): { doc: EditorDocument; state: Ed
   const rawState = value.state;
   if (!Array.isArray(rawState.cuts) || rawState.cuts.length > 200000 || !strings(rawState.forcedJoins)) throw new Error("編集履歴の形式が正しくありません。");
   let state = createEditorState();
+  if(rawState.mutes!==undefined){if(!Array.isArray(rawState.mutes))throw Error('ミュート区間の形式が正しくありません。');state.mutes=normalizeMutes(rawState.mutes as MuteRange[]);}
   if(rawState.keepTail!==undefined){if(typeof rawState.keepTail!=="boolean")throw new Error("末尾設定が正しくありません。");state.keepTail=rawState.keepTail;}
   state.aliases = safeDictionary(rawState.aliases) as Record<string, string>;
   state.speakerOverrides = safeDictionary(rawState.speakerOverrides, true);
@@ -1007,6 +1010,7 @@ export function importProjectJson(raw: string): { doc: EditorDocument; state: Ed
   const mediaDurationMs = value.mediaDurationMs as number | undefined;
   if (mediaDurationMs !== undefined && (!Number.isSafeInteger(mediaDurationMs) || mediaDurationMs < 0)) throw new Error("メディアの長さが正しくありません。");
   const limit = Math.max(doc.durationMs, mediaDurationMs ?? 0);
+  if(state.mutes?.some(r=>r.end>limit))throw Error("ミュート区間が元メディアの範囲外です。");
   for (const rawCut of rawState.cuts) {
     if (!record(rawCut) || typeof rawCut.id !== "string" || !strings(rawCut.sourceCueIds) || rawCut.sourceCueIds.some(id => !doc.cueById.has(id)) || !kinds.has(rawCut.kind as CutKind) || !precisions.has(rawCut.precision as CutPrecision)) throw new Error("カット履歴の形式または字幕参照が正しくありません。");
     if (rawCut.tokenIds !== undefined && (!strings(rawCut.tokenIds) || rawCut.tokenIds.some(id => !doc.tokenById.has(id))) || rawCut.lineIds !== undefined && (!strings(rawCut.lineIds) || rawCut.lineIds.some(id => !doc.lineById.has(id)))) throw new Error("単語・行の参照が正しくありません。");

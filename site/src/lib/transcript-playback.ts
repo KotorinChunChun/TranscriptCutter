@@ -1,3 +1,4 @@
+import {muteAt} from './audio-mute';
 import { buildMediaCutPlan, type MediaCutInput, type MediaCutPlan } from "./media-plan";
 
 export type PlaybackMode = "original" | "edited";
@@ -86,6 +87,7 @@ export interface PlaybackSnapshot {
   playbackRate: number;
 }
 export interface TranscriptPlaybackOptions {
+  mutes?: readonly import('./audio-mute').MuteRange[];
   cuts: readonly MediaCutInput[];
   subtitleEndMs: number;
   mediaDurationMs?: number;
@@ -126,6 +128,8 @@ export function createTranscriptPlaybackController(
     clearTimer: id => clearTimeout(id),
   };
   let options = initialOptions;
+  let userMuted=!!media.muted,appliedMuted=!!media.muted;
+  const syncMute=()=>{if(media.muted!==appliedMuted)userMuted=!!media.muted;const next=userMuted||muteAt(options.mutes??[],media.currentTime*1000);if(media.muted!==next)media.muted=next;appliedMuted=next;};
   let mode: PlaybackMode = "original";
   let waiting = false, destroyed = false, requestedPlaying = false;
   let requestId = 0, frame: number | null = null, timer: ReturnType<typeof setTimeout> | null = null;
@@ -147,6 +151,7 @@ export function createTranscriptPlaybackController(
     frame = null; clearBoundaryTimer();
   };
   const emit = (force = false) => {
+    syncMute();
     if (destroyed) return;
     const now = scheduler.now();
     const next: PlaybackSnapshot = { currentMs: Math.round(sourceMilliseconds()), playing: !media.paused && !media.ended && requestedPlaying, waiting, mode, playbackRate: currentPlaybackRate() };
@@ -192,11 +197,13 @@ export function createTranscriptPlaybackController(
     }
   };
   const scheduleBoundary = (position: PlaybackPosition | null) => {
-    if (mode !== "edited" || !position || position.done || position.nextBoundaryMs === null || media.paused || !requestedPlaying || waiting) { clearBoundaryTimer(); return; }
+    const muteBoundary=(options.mutes??[]).flatMap(r=>[r.start,r.end]).filter(ms=>ms>sourceMilliseconds()+.01).sort((a,b)=>a-b)[0];
+    const nextBoundary=Math.min(mode==="edited"?position?.nextBoundaryMs??Infinity:Infinity,muteBoundary??Infinity);
+    if (!position || position.done || !Number.isFinite(nextBoundary) || media.paused || !requestedPlaying || waiting) { clearBoundaryTimer(); return; }
     const rate = currentPlaybackRate();
-    if (timer !== null && timerBoundary === position.nextBoundaryMs && timerRate === rate) return;
-    clearBoundaryTimer(); timerBoundary = position.nextBoundaryMs; timerRate = rate;
-    const delay = Math.max(1, (position.nextBoundaryMs - sourceMilliseconds()) / rate);
+    if (timer !== null && timerBoundary === nextBoundary && timerRate === rate) return;
+    clearBoundaryTimer(); timerBoundary = nextBoundary; timerRate = rate;
+    const delay = Math.max(1, (nextBoundary - sourceMilliseconds()) / rate);
     timer = scheduler.setTimer(() => {
       timer = null; timerBoundary = null;
       if (destroyed || media.paused || !requestedPlaying) return;
@@ -217,6 +224,7 @@ export function createTranscriptPlaybackController(
       return;
     }
     if (!seek(target.currentMs)) return;
+    syncMute();
     requestedPlaying = true; waiting = media.readyState < 3;
     const version = requestId;
     try {
@@ -330,6 +338,7 @@ export function createTranscriptPlaybackController(
       destroyed = true; requestId++; pending = null; requestedPlaying = false; cancelTicks();
       for (const [event, handler] of listeners) media.removeEventListener(event, handler);
       media.pause();
+      if(media.muted===appliedMuted)media.muted=userMuted;
     },
   };
 }

@@ -32,8 +32,8 @@ export function useTranscriptPlayback(mediaRef: RefObject<HTMLMediaElement | nul
   }, [mediaRef, options.sourceKey]);
 
   useEffect(() => {
-    controller.current?.updateOptions({ cuts: options.cuts, subtitleEndMs: options.subtitleEndMs, mediaDurationMs: options.mediaDurationMs });
-  }, [options.cuts, options.subtitleEndMs, options.mediaDurationMs]);
+    controller.current?.updateOptions({ cuts: options.cuts, mutes:options.mutes, subtitleEndMs: options.subtitleEndMs, mediaDurationMs: options.mediaDurationMs });
+  }, [options.cuts, options.mutes, options.subtitleEndMs, options.mediaDurationMs]);
 
   const playFrom = useCallback((milliseconds: number, mode?: PlaybackMode) => {
     if (!controller.current) { currentOptions.current.onError?.("動画・音声を追加すると、この時刻から確認できます。"); return; }
