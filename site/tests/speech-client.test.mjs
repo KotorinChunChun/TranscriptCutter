@@ -28,7 +28,7 @@ test('running jobs may refresh credentials only on the same configured URL',()=>
 });
 
 test('Nemotron ASR is selectable from the catalog without admitting diarization or 30B models',async()=>{
- const model=(engineId,modelId,task)=>({id:engineId+'/'+modelId,x_meeting:{engineId,modelId,engineLabel:engineId,label:modelId,...(task===undefined?{}:{task}),integratedDiarization:false,diarization:true,processingMethods:[{id:'cpu',label:'CPU'}]}});
+ const model=(engineId,modelId,task)=>({id:engineId+'/'+modelId,x_meeting:{engineId,modelId,engineLabel:engineId,label:modelId,...(task===undefined?{}:{task}),integratedDiarization:false,diarization:true,availability:'installed',processingMethods:[{id:'cpu',label:'CPU'}]}});
  const asr=model('nemotron-asr','nemotron-3.5-asr-streaming-0.6b','transcription');
  const legacy=['whisper','haas','qwen','reazon','parakeet'].map(engine=>model(engine,'legacy'));
  const client=new SpeechClient();client.request=async path=>path==='/api/health'?{appId:'meeting-transcriber',protocolVersion:3,authMode:'lan'}:{data:[...legacy,asr,model('diarization','nemotron-3','diarization'),model('nemotron-transcribe','30b','transcription'),model('nemotron-asr','separation','diarization')]};

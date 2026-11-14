@@ -14,10 +14,10 @@ export function serverUrl(value){
  if(!['http:','https:'].includes(url.protocol)||url.username||url.password||url.search||url.hash||url.pathname!=='/')throw new ConnectionError('サーバーURLはHTTP/HTTPSのオリジンで指定してください。',400);
  return url;
 }
-function healthRequest(target,headers={}){
+function healthRequest(target,headers={},path='/api/health'){
  return new Promise((resolve,reject)=>{
   const transport=target.protocol==='https:'?https:http;
-  const request=transport.get(new URL('/api/health',target),{headers},response=>{
+  const request=transport.get(new URL(path,target),{headers},response=>{
    const chunks=[];let size=0;
    response.on('data',chunk=>{size+=chunk.length;if(size>1024*1024){response.destroy();reject(new ConnectionError('サーバー応答が大きすぎます。'));}else chunks.push(chunk);});
    response.on('end',()=>{let body;try{body=JSON.parse(Buffer.concat(chunks).toString());}catch{body=null;}resolve({status:response.statusCode,body});});
@@ -55,7 +55,18 @@ export async function connectSpeech(value,key=''){
   mode=health.authMode==='lan'?'lan':'local';headers={'X-Local-Token':health.token};
  }
  const current=result.body,readiness={};
- for(const name of ['ready','speechAvailable','ffmpegAvailable','ffprobeAvailable'])if(typeof current[name]==='boolean')readiness[name]=current[name];
+ for(const name of ['ready','acceptingJobs','speechAvailable','ffmpegAvailable','ffprobeAvailable'])if(typeof current[name]==='boolean')readiness[name]=current[name];
+ if(typeof current.startupState==='string')readiness.startupState=current.startupState.slice(0,64);
+ if(current.startupState==='preparing'||current.acceptingJobs===false){
+  readiness.preparation={};
+  try{
+   const progress=await healthRequest(target,headers,'/api/management');
+   if(progress.status!==200)throw Error('progress unavailable');
+   const operation=progress.body?.operation;
+   for(const name of ['targetLabel','phase','message'])if(typeof operation?.[name]==='string')readiness.preparation[name]=operation[name].slice(0,500);
+   for(const name of ['receivedBytes','totalBytes'])if(Number.isFinite(operation?.[name])&&operation[name]>=0)readiness.preparation[name]=operation[name];
+  }catch{readiness.preparation.message='進捗の詳細を取得できません。自動で再確認します。';}
+ }
  if(typeof current.reason==='string')readiness.reason=current.reason.slice(0,500);
  readiness.capabilities={jobDeletion:current.capabilities?.jobDeletion===true};
  return {target,headers,health:{appId:health.appId,protocolVersion:health.protocolVersion,serverVersion:health.serverVersion,executionTarget:health.executionTarget,authMode:mode,...readiness}};

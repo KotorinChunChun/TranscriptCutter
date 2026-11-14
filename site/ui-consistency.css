@@ -132,3 +132,7 @@
  .vtt-comparison .comparison-workspace-heading:has(.comparison-transport){flex-wrap:wrap;}
  .vtt-comparison .comparison-workspace-heading>.comparison-transport{flex-basis:100%;order:2;}
 }
+
+.server-preparation { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px; margin-bottom: 8px; background: #fff5d8; border: 1px solid #c9a340; border-radius: 6px; }
+.server-preparation progress { width: 180px; max-width: 100%; }
+.server-preparation span { flex-basis: 100%; }
