@@ -17,7 +17,7 @@ function ModelReferenceSpeed({model}:{model:Model}){
 }
 import {segmentsToVtt} from './segments-vtt';
 import {formatTime} from './src/lib/vtt';
-import {RecognitionResults,isActiveJob,recognitionProgress,recognitionElapsed,transcriptionName} from './recognition-state';
+import {RecognitionResults,isActiveJob,recognitionProgress,recognitionElapsed,recognitionLabels,transcriptionName} from './recognition-state';
 import {recognitionSetup,managementUrl,type SetupStep} from './recognition-setup';
 import {effectiveDiarization,finishEstimate} from './recognition-options';
 import {useRecognitionRange,RecognitionRangeControls} from './recognition-range-controls';
@@ -42,8 +42,6 @@ function SetupCard({number,title,summary,active,disabled,onOpen,children,tone}:{
  const [collapsed,setCollapsed]=useState(false);useEffect(()=>setCollapsed(false),[active]);const expanded=active&&!collapsed;
  return <section className="setup-card" data-current={expanded} data-tone={tone}><button className="setup-toggle" aria-expanded={expanded} aria-controls={`setup-${number}`} disabled={disabled} onClick={()=>{if(active)setCollapsed(!collapsed);else{setCollapsed(false);onOpen();}}}><span className="setup-number">{number+1}</span><span className="setup-label"><strong>{title}</strong>{summary&&<span>{summary}</span>}</span><span aria-hidden="true">{expanded?'−':'＋'}</span></button><div className="setup-content" id={`setup-${number}`} hidden={!expanded}>{children}</div></section>;
 }
-const status:Record<string,string>={uploading:'送信中',queued:'待機中',running:'認識中',complete:'完了',error:'エラー',cancelled:'中止',interrupted:'中断'};
-const phases:Record<string,string>={uploading:'送信中',queued:'待機中',preparing:'音声・モデルを準備中',converting:'音声を変換中',loading:'モデルを準備中',loading_model:'モデルを準備中',downloading:'モデルを取得中',diarizing:'話者を識別中',transcribing:'字幕を認識中',complete:'完了',error:'エラー',cancelled:'中止',interrupted:'中断'};
 function ServerRecognition({active,onTransfer,onActivity,historyHost,sourceControls}:RecognitionProps&{historyHost:HTMLDivElement|null}){
  const [restored]=useState(()=>restoredWorkspace<{range:RangeSelection;step:SetupStep;job:Job|null;segments:Segment[];serverUrl:string}>('server-recognition'));
  const restoreJob=useRef(!!restored?.data.job),restoreSetup=useRef(!!restored);
@@ -75,8 +73,8 @@ function ServerRecognition({active,onTransfer,onActivity,historyHost,sourceContr
  useEffect(()=>{if(busy||!models.length)return;const prefs=loadSpeechPreferences(connectedUrl),mode=speakerModes(models).some(m=>m.id===speakerMode)?speakerMode:'none',list=modelsForSpeakerMode(models,mode),selected=list.find(m=>m.id===modelId)??list.find(m=>m.id===prefs.modelId)??list[0];setSpeakerMode(mode);setModelId(selected?.id??'');setDevice(current=>processingChoice(selected,current));},[models,busy,connectedUrl,speakerMode,modelId]);
  const connectionCurrent=connected&&!healthError&&canConfigureConnection(true,connectedUrl,serverUrl),workflow=recognitionSetup({connected:connectionCurrent,ready:serverReady,modelSelected:!!model&&model.x_meeting.available!==false&&model.x_meeting.runtimeReady!==false,methodSelected:!!model?.x_meeting.processingMethods.some(m=>m.id===device),hasFile:!!file,busy}),manageLink=connectionCurrent?(managementProxy??managementUrl(connectedUrl)):null;
  useEffect(()=>{if(follow&&busy&&resultList.current)resultList.current.scrollTop=resultList.current.scrollHeight;},[segments.length,follow,busy,search]);
- const phaseLabel=job?(phases[String(job.phase)]??'処理中'):'';
- const activityLabel=upload?`送信 ${Math.round(progress*100)}%`:job?`${status[job.status]??job.status} ${Math.round(position.fraction*100)}%・字幕${segments.length}件`:'';
+ const {statusLabel,phaseLabel,waitingReason}=recognitionLabels(job);
+ const activityLabel=upload?`送信 ${Math.round(progress*100)}%`:job?`${statusLabel} ${Math.round(position.fraction*100)}%・字幕${segments.length}件`:'';
  useEffect(()=>{onActivity?.({busy,label:activityLabel});},[busy,activityLabel,onActivity]);
  useEffect(()=>{if(!busy)return;setClock(Date.now());const timer=setInterval(()=>setClock(Date.now()),1000);return()=>clearInterval(timer);},[busy]);
  const chooseModel=(id:string,list=choices,mode=speakerMode,target=connectedUrl)=>{const prefs=loadSpeechPreferences(target),m=list.find(m=>m.id===id),method=processingChoice(m,prefs.devices[id]);setModelId(id);setDevice(method);saveSpeechPreferences(target,{...prefs,modelId:id,mode,devices:{...prefs.devices,[id]:method}});};
@@ -141,7 +139,7 @@ function ServerRecognition({active,onTransfer,onActivity,historyHost,sourceContr
   <MediaDrop disabled={busy} onLoad={load} label="工程1の動画ドロップ領域">{url&&file&&<RecognitionMediaPreview file={file} url={url} player={player} onLoadedMetadata={rangeSeek.loaded} onSeeked={rangeSeek.seeked} onTimeUpdate={rangeSeek.timeUpdate} onError={()=>setError('この形式はブラウザーでプレビューできません。')}/>}</MediaDrop>
   {file&&<button className="next-step primary-action" onClick={()=>openStep(4)}>次へ：文字起こし</button>}
  </SetupCard>
- <SetupCard number={4} title={job&&!busy?"次回の文字起こし":"文字起こし"} summary={busy?'処理中':job?status[job.status]??job.status:''} active={currentStep===4} disabled={connecting||!workflow.allowed[4]&&!job} onOpen={()=>openStep(4)}>
+ <SetupCard number={4} title={job&&!busy?"次回の文字起こし":"文字起こし"} summary={upload?'送信中':job?statusLabel:''} active={currentStep===4} disabled={connecting||!workflow.allowed[4]&&!job} onOpen={()=>openStep(4)}>
 
   <RecognitionRangeControls range={range} disabled={busy||!file} onSeek={rangeSeek.seek}/>{hashing&&<p role="status">元動画を照合中 {Math.round(hashProgress*100)}%</p>}
   <button className="primary-action start-recognition" disabled={!workflow.canStart||connecting||!range.valid||!mediaHash} onClick={()=>void recognize()}>文字起こし開始</button>
@@ -149,10 +147,10 @@ function ServerRecognition({active,onTransfer,onActivity,historyHost,sourceContr
 
  </section>
  {hasResult&&<section className="recognition-output" aria-label="認識結果"><div className="row result-tools"><SaveMenu stage={1} active={active} className="primary-action"/><button disabled={upload||connecting} onClick={()=>void connect()}>サーバーへ再接続</button><button disabled={!job||upload} onClick={()=>void refresh(true)}>サーバーから結果を再取得</button>{canCancel&&<button className="cancel-action" onClick={()=>void cancel()}>認識中止</button>}</div>
- <section className="recognition-progress" aria-label="文字起こしの進捗"><strong aria-live="polite">{upload?`送信 ${Math.round(progress*100)}%`:job?`${status[job.status]??job.status}${phaseLabel===(status[job.status]??job.status)?'':'・'+phaseLabel}・${Math.round(position.fraction*100)}%`:'未実行'}</strong>
+ <section className="recognition-progress" aria-label="文字起こしの進捗"><strong aria-live="polite">{upload?`送信 ${Math.round(progress*100)}%`:job?`${statusLabel}${phaseLabel===statusLabel?'':'・'+phaseLabel}・${Math.round(position.fraction*100)}%`:'未実行'}</strong>
  <progress aria-label="認識範囲の進捗" max={1} value={upload?progress:position.fraction}/>
  {job&&<><p>認識済み {formatTime(Math.round(position.done*1000),true)} ／ 対象 {formatTime(Math.round(position.from*1000),true)} → {position.to>position.from?formatTime(Math.round(position.to*1000),true):'長さを確認中'}</p><p>経過 {elapsed.seconds===null?'計測値なし':Math.floor(elapsed.seconds)+'秒'+(elapsed.source==='timestamps'?'（時刻差）':'')}・保存字幕 {Number(job.segmentCount??segments.length)}件・表示取得 {segments.length}件</p>{isActiveJob(job)&&<p aria-label="終了見込み">{estimate?`認識終了見込み（推定） ${new Date(estimate.finishAt).toLocaleTimeString('ja-JP')}・残り約${Math.ceil(estimate.remainingSeconds)}秒`:'終了見込み：進捗が得られるまで算出待ち'}</p>}<p>{String(job.engine??'')} / {String(job.modelId??'')}・{String(job.metadata?.actualDevice??job.metadata?.executionDevice??job.device??'')}</p></>}
- {job&&<ServerMeasurements job={job}/>} {job?.message&&job.status!=='complete'&&<p>{job.message}</p>}{job?.error&&<p role="alert" className="error">{job.error}</p>}{job&&job.status!=='complete'&&segments.length>0&&<p className="partial-result">途中結果（確定済み字幕のみ）。動画全体の認識完了ではありません。</p>}{pollError&&<p role="alert" className="error">{pollError}</p>}</section>
+ {job&&<ServerMeasurements job={job}/>} {waitingReason?<p role="status" aria-label="資源待ちの理由">{waitingReason}</p>:job?.message&&job.status!=='complete'&&<p>{job.message}</p>}{job?.error&&<p role="alert" className="error">{job.error}</p>}{job&&job.status!=='complete'&&segments.length>0&&<p className="partial-result">途中結果（確定済み字幕のみ）。動画全体の認識完了ではありません。</p>}{pollError&&<p role="alert" className="error">{pollError}</p>}</section>
  {job&&<><div className="row"><h2>字幕</h2><button className={job.status==='complete'?'primary-action':''} disabled={job.status!=='complete'||!segments.length||!sourceMatches} onClick={handoff}>VTT編集</button>{job.status==='complete'&&!sourceMatches&&<>{file&&mediaHash&&!sourceIdentity(job)?<button onClick={()=>void confirmLegacySource()}>元動画の一致を確認</button>:<button onClick={()=>openStep(3)}>元動画・音声をドロップ</button>}{file&&mediaHash&&sourceIdentity(job)&&<span className="error">元動画の内容が認識結果と一致しません。</span>}</>}</div>
  <div className="row"><input aria-label="字幕検索" placeholder="字幕を検索" value={search} onChange={e=>{setSearch(e.target.value);setPage(0);}}/><span>{rows.length}件</span><label><input type="checkbox" checked={follow} onChange={e=>setFollow(e.target.checked)}/>最新の字幕を追う</label></div>
  <div className="row"><button disabled={currentPage===0} onClick={()=>{setFollow(false);setPage(currentPage-1);}}>前の字幕</button><span aria-label="字幕の表示範囲">{rows.length?currentPage*200+1:0}〜{Math.min(rows.length,(currentPage+1)*200)} ／ {rows.length}件</span><button disabled={currentPage>=pages-1} onClick={()=>{setFollow(false);setPage(currentPage+1);}}>次の字幕</button></div>

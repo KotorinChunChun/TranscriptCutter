@@ -69,5 +69,6 @@ export async function connectSpeech(value,key=''){
  }
  if(typeof current.reason==='string')readiness.reason=current.reason.slice(0,500);
  readiness.capabilities={jobDeletion:current.capabilities?.jobDeletion===true};
+ for(const name of ['concurrentInference','resourceBudgetScheduling'])if(typeof current.capabilities?.[name]==='boolean')readiness.capabilities[name]=current.capabilities[name];
  return {target,headers,health:{appId:health.appId,protocolVersion:health.protocolVersion,serverVersion:health.serverVersion,executionTarget:health.executionTarget,authMode:mode,...readiness}};
 }

@@ -15,6 +15,11 @@ const fixture=(mode,received,options={})=>createServer(async(req,res)=>{
  res.end(JSON.stringify({job:{id:'a'.repeat(32),status:req.url.endsWith('/cancel')?'cancelled':'queued'},data:[],segments:[],total:0}));
 });
 const clientHeaders=id=>({'X-TC-Client':id});
+
+test('v0.1.14 scheduling capabilities survive the proxy without private fields',async()=>{
+ const upstream=fixture('local',[],{health:{serverVersion:'0.1.14',capabilities:{jobDeletion:true,concurrentInference:true,resourceBudgetScheduling:true,privatePath:'fixture-private'}}}),target=await listen(upstream),web=createWebServer({speechUrl:target}),base=await listen(web);
+ try{const health=await(await fetch(base+'/speech/api/health')).json();assert.equal(health.serverVersion,'0.1.14');assert.deepEqual(health.capabilities,{jobDeletion:true,concurrentInference:true,resourceBudgetScheduling:true});assert.doesNotMatch(JSON.stringify(health),/fixture-private|fixture-operation-token/);}finally{await stop(web);await stop(upstream);}
+});
 test('delete-job is POST-only, capability-gated and keeps unrelated capability fields private',async()=>{
  for(const supported of [false,true]){
   const received=[],upstream=fixture('lan',received,{health:{capabilities:{jobDeletion:supported,secret:'fixture-private'}}}),target=await listen(upstream),web=createWebServer({speechUrl:target}),base=await listen(web),path='/speech/api/jobs/'+'a'.repeat(32)+'/delete';

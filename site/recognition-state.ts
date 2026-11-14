@@ -1,5 +1,18 @@
 import type {Job,Segment,SpeechClient} from './speech-client';
 export const isActiveJob=(job:Job|null)=>!!job&&['queued','running','uploading'].includes(job.status);
+const statusLabels:Record<string,string>={uploading:'送信中',queued:'待機中',running:'認識中',complete:'完了',error:'エラー',cancelled:'中止',interrupted:'中断'};
+const runningPhases:Record<string,string>={preparing:'音声・モデルを準備中',converting:'音声を変換中',loading:'モデルを準備中',loading_model:'モデルを準備中',downloading:'モデルを取得中',diarizing:'話者を識別中',transcribing:'字幕を認識中'};
+/** Status determines lifecycle; new server phases never turn an active job into a failure. */
+export function recognitionLabels(job:Job|null){
+ if(!job)return {statusLabel:'未実行',phaseLabel:'未実行',waitingReason:''};
+ const statusLabel=Object.hasOwn(statusLabels,job.status)?statusLabels[job.status]:'状態不明';
+ if(job.status==='queued'){
+  const reason=job.metadata?.waitingReason;
+  return {statusLabel,phaseLabel:job.phase==='waiting_resources'?'資源待ち':statusLabel,waitingReason:typeof reason==='string'?reason.trim():''};
+ }
+ const phase=String(job.phase);
+ return {statusLabel,phaseLabel:job.status==='running'?(Object.hasOwn(runningPhases,phase)?runningPhases[phase]:'処理中'):statusLabel,waitingReason:''};
+}
 export class RecognitionResults {
  private epoch=0;private id='';private pending=-1;private rows:Segment[]=[];
  private client:Pick<SpeechClient,'request'|'segments'>;
