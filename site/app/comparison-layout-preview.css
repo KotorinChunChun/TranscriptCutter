@@ -79,3 +79,6 @@
 .comparison-edit-adopt[aria-pressed=true]{background:#d4eadb;color:#086c49;}
 @media(max-width:1100px){.comparison-layout-preview .comparison-selection-count{display:none;}.comparison-layout-preview .comparison-title h2{display:none;}.comparison-layout-preview .comparison-source-count{padding-inline:3px;}}
 @media(max-width:800px){.comparison-layout-preview{--comparison-axis-width:100px;}.comparison-layout-preview.comparison-simple{--comparison-axis-width:100px;}.comparison-layout-preview .comparison-reference{min-width:140px;}.comparison-layout-preview .comparison-transport{gap:4px;}.comparison-layout-preview .comparison-source-count{white-space:nowrap;}}
+.comparison-speaker-cell{padding-right:22px;}
+.comparison-speaker-cell>.comparison-speaker-edit{position:absolute;right:1px;top:5px;width:22px;height:26px;display:grid;place-items:center;}
+.comparison-speaker-cell>.comparison-speaker-edit:disabled{opacity:.4;}

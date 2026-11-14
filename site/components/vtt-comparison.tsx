@@ -1,5 +1,6 @@
 import {SaveMenu} from '@/save-menu';
 import {AddMenu} from './add-menu';
+import {Modal} from './editor-ui';
 import {createPortal} from 'react-dom';
 import {comparisonDisplayTime} from '@/comparison-layout';
 import {confirmAction} from '@/browser';
@@ -134,6 +135,14 @@ function CustomSpeaker({ value, onCommit, disabled, rowTime }: {
   </div>;
 }
 
+function RowSpeakerDialog({label,names,text,onSave,onClose}:{label:string;names:string[];text:string;onSave:(name:string|null)=>void;onClose:()=>void}){
+ const [draft,setDraft]=useState(label),[error,setError]=useState('');
+ return <Modal title="採用する話者を変更" onClose={onClose} footer={<><button className="button secondary" onClick={()=>onSave(null)}>字幕と同じ</button><button className="button primary" onClick={()=>{const error=nameError(draft);setError(error);if(!error)onSave(draft.trim());}}>変更</button></>}>
+  <p>{text}</p><label className="form-field">話者名<input autoFocus value={draft} maxLength={80} aria-label="比較区間の話者名" onChange={e=>setDraft(e.target.value)}/></label>
+  <div className="action-group">{names.map(name=><button className="button secondary small" key={name} onClick={()=>setDraft(name)}>{name}</button>)}</div>{error&&<p role="alert">{error}</p>}
+ </Modal>;
+}
+
 function SpeakerResult({ session, row, choice }: { session: ComparisonSession; row: ComparisonRow; choice: ComparisonChoice }) {
   if (choice.speaker && "custom" in choice.speaker) return <><strong>{choice.speaker.custom}</strong><span className="comparison-result-origin">指定した名前</span></>;
   if (choice.speaker && "sourceId" in choice.speaker) {
@@ -206,6 +215,7 @@ function Candidate({ session, row, source, choice, onChoice, canPlay, onSeek, bu
 
 export function VttComparison({ session, active, onSample, canSample, onChange, onAddFiles, onGenerate, onApply, onExportVtt, onSeek, canPlay, currentMs, durationMs, playing, onTogglePlayback, onScrub, busy }: VttComparisonProps) {
   const [query, setQuery] = useState("");
+  const [speakerRow,setSpeakerRow]=useState<string|null>(null);
   const [simple,setSimple]=useState(()=>{try{return localStorage.getItem('tc-comparison-view')!=='detail';}catch{return true;}});
   const [expanded,setExpanded]=useState<Set<string>>(new Set());
   const [differencesOnly, setDifferencesOnly] = useState(false);
@@ -250,7 +260,7 @@ export function VttComparison({ session, active, onSample, canSample, onChange, 
     let run:{key:string;label:string;ids:string[]}|null=null;
     const finish=()=>{if(run)run.ids.forEach((id,index)=>result.set(id,{key:run!.key,label:run!.label,first:index===0,count:run!.ids.length}));};
     for(const row of filteredRows){
-      const choice=getComparisonChoice(session,row),speaker=simple?null:choice.speaker;
+      const choice=getComparisonChoice(session,row),speaker=choice.speaker;
       const picked=speaker&&'sourceId' in speaker?speaker.sourceId:choice.outputSourceId??choice.textSourceId;
       const source=session.sources.find(s=>s.id===picked),cues=picked?row.candidates[picked]??[]:[];
       const label=!choice.textSourceId?'字幕なし':speaker&&'custom' in speaker?speaker.custom:source?(speaker&&'sourceId' in speaker?speakerLabel(session,source,speaker.label):[...new Set(cues.map(c=>speakerLabel(session,source,c.speaker)))].join(' / ')||'話者情報なし'):'話者情報なし';
@@ -361,6 +371,7 @@ export function VttComparison({ session, active, onSample, canSample, onChange, 
   const timelineStyle = { "--comparison-columns": sources.length } as CSSProperties;
 
   return <section className={`vtt-comparison comparison-layout-preview${simple?" comparison-simple":""}`} aria-label="字幕比較" style={timelineStyle}>
+    {speakerRow&&rows.find(row=>row.id===speakerRow)&&createPortal(<RowSpeakerDialog key={speakerRow} label={speakerRuns.get(speakerRow)?.label??''} names={[...new Set(sources.flatMap(source=>getComparisonSpeakers(source).map(label=>speakerLabel(session,source,label))))]} text={(()=>{const row=rows.find(row=>row.id===speakerRow)!;const choice=getComparisonChoice(session,row);return (row.candidates[choice.outputSourceId??choice.textSourceId??'']??[]).map(cue=>cue.text).join(' ');})()} onClose={()=>setSpeakerRow(null)} onSave={name=>{const row=rows.find(row=>row.id===speakerRow)!;choose(row,{...getComparisonChoice(session,row),speaker:name===null?null:{custom:name}});setSpeakerRow(null);}}/>,document.body)}
     {header}
 
     <div className="comparison-tools"><div className="action-group comparison-view-toggle" role="group" aria-label="比較の表示"><button className="button secondary small" aria-pressed={simple} onClick={()=>{setSimple(true);localStorage.setItem('tc-comparison-view','simple');}}>簡易</button><button className="button secondary small" aria-pressed={!simple} onClick={()=>{setSimple(false);localStorage.setItem('tc-comparison-view','detail');}}>詳細</button></div>
@@ -409,7 +420,7 @@ export function VttComparison({ session, active, onSample, canSample, onChange, 
             const rowTime = formatTime(row.start, true);
             return <section className={`comparison-row${expanded.has(row.id)?" row-details":""}${!choice.textSourceId ? " row-skipped" : ""}${canPlay&&currentMs>=row.start&&currentMs<row.end?" row-playhead"+(playing?" row-playing":""):""}`} key={row.id} data-comparison-row={row.id} aria-label={`${rowTime}からの比較区間`}>
               <div className="comparison-grid">
-                <div className="comparison-speaker-cell">{run?.first&&<button aria-label={run.label+' '+run.count+'発言を'+(collapsed.has(run.key)?'展開':'折りたたむ')} aria-expanded={!collapsed.has(run.key)} disabled={run.count<2} onClick={()=>{setFollowPlayback(false);setCollapsed(old=>{const next=new Set(old);if(next.has(run.key))next.delete(run.key);else next.add(run.key);return next;});}}><span>{run.count>1?(collapsed.has(run.key)?'▸':'▾'):''}{run.label}</span>{run.count>1&&<small>{run.count}発言</small>}</button>}</div><div className="comparison-time-axis"><button type="button" onClick={() => seekRow(row.start)} disabled={!canPlay || busy} aria-label={`元動画の${rowTime}から再生`}><time title={rowTime}>{comparisonDisplayTime(row.start)}</time><span className="comparison-axis-end">{comparisonDisplayTime(row.end)}</span>{canPlay && <span className="comparison-axis-play"><Play size={10}/>再生</span>}</button>{!row.referenceCueId && <span className="comparison-extra-row">基準外の字幕</span>}</div>
+                <div className="comparison-speaker-cell">{run?.first&&<button aria-label={run.label+' '+run.count+'発言を'+(collapsed.has(run.key)?'展開':'折りたたむ')} aria-expanded={!collapsed.has(run.key)} disabled={run.count<2} onClick={()=>{setFollowPlayback(false);setCollapsed(old=>{const next=new Set(old);if(next.has(run.key))next.delete(run.key);else next.add(run.key);return next;});}}><span>{run.count>1?(collapsed.has(run.key)?'▸':'▾'):''}{run.label}</span>{run.count>1&&<small>{run.count}発言</small>}</button>}<button className="comparison-mini-icon comparison-speaker-edit" aria-label={rowTime+"の話者を変更"} title="話者を変更" disabled={busy||!choice.textSourceId} onClick={()=>setSpeakerRow(row.id)}><Pencil size={14}/></button></div><div className="comparison-time-axis"><button type="button" onClick={() => seekRow(row.start)} disabled={!canPlay || busy} aria-label={`元動画の${rowTime}から再生`}><time title={rowTime}>{comparisonDisplayTime(row.start)}</time><span className="comparison-axis-end">{comparisonDisplayTime(row.end)}</span>{canPlay && <span className="comparison-axis-play"><Play size={10}/>再生</span>}</button>{!row.referenceCueId && <span className="comparison-extra-row">基準外の字幕</span>}</div>
                 {sources.map(source => source.editable?draftCell(source,row):<Candidate key={source.id} session={session} row={row} source={source} choice={choice} onChoice={next => choose(row, next)} canPlay={canPlay} onSeek={seekRow} busy={busy} simple={simple&&!expanded.has(row.id)}/>)}
                 <div className="comparison-side-details">{simple&&<button className="comparison-text-button" aria-expanded={expanded.has(row.id)} onClick={()=>setExpanded(old=>{const next=new Set(old);if(next.has(row.id))next.delete(row.id);else next.add(row.id);return next;})}>{expanded.has(row.id)?'閉じる':'詳細'}</button>}</div>
               </div>

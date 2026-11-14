@@ -1,3 +1,5 @@
+import {subtitleCsv} from './src/lib/subtitle-csv';
+import {parseVtt} from './src/lib/vtt';
 import {SaveMenu,useSaveOptions} from './save-menu';
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {restoredWorkspace,useWorkspaceSave} from './workspace-storage';
@@ -73,6 +75,7 @@ export function BrowserRecognition({active,onTransfer,onActivity,sourceControls}
  const outputName=(extension='vtt')=>transcriptionName(job!,file?.name??'transcript','',extension);
  const download=(record=false)=>{if(!job)return;const text=record?JSON.stringify({schemaVersion:2,job,segments,clientMeasurements:processingMetrics().filter(m=>m.details.jobId===job.id),memoryNote:'Optional JS heap snapshots, not process/GPU/peak memory.'},null,2):segmentsToVtt(segments),blob=new Blob([text],{type:record?'application/json':'text/vtt;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=outputName(record?'json':'vtt');a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);};
  useSaveOptions(active,[
+  {id:'recognition-csv',label:'認識結果の字幕（CSV）',description:'開始・終了・話者・本文を表形式で保存',disabled:!segments.length,run:()=>{if(!job)return;const url=URL.createObjectURL(new Blob([subtitleCsv(parseVtt(segmentsToVtt(segments)).cues)],{type:'text/csv;charset=utf-8'})),a=document.createElement('a');a.href=url;a.download=outputName('csv');a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);}},
   {id:'recognition-vtt',label:job?.status==='complete'?'認識結果の字幕（VTT）':'認識途中の字幕（VTT）',description:'文字起こしで確定した字幕を保存',disabled:!segments.length,run:()=>download()},
   {id:'recognition-record',label:'認識処理記録（JSON）',description:'この認識のモデル・処理時間・ブラウザー計測',disabled:!job,run:()=>download(true)},
  ]);

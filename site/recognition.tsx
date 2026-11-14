@@ -1,3 +1,5 @@
+import {subtitleCsv} from './src/lib/subtitle-csv';
+import {parseVtt} from './src/lib/vtt';
 import {useEffect,useMemo,useRef,useState,type ReactNode} from 'react';
 import {restoredWorkspace,useWorkspaceSave,speechSessionClientId} from './workspace-storage';
 import type {RangeSelection} from './recognition-range';
@@ -91,6 +93,7 @@ function ServerRecognition({active,onTransfer,onActivity,historyHost,sourceContr
  const handoff=()=>{if(!file||job?.status!=='complete'||!segments.length)return;if(!sourceMatches){setError('認識した元動画と同じファイルを読み込んでください。');return;}try{player.current?.pause();onTransfer({media:file,vtt:exportVtt(),name:outputName(),segments});}catch(e){setError(String(e));}};
  const download=(record=false)=>{if(!job)return;try{const blob=new Blob([record?JSON.stringify({schemaVersion:2,recordedAt:new Date().toISOString(),serverUrl:connectedUrl,sourceFile:job.fileName,partial:job.status!=='complete',job,clientMeasurements:processingMetrics().filter(m=>m.details.jobId===job.id),memoryNote:'Browser memory values are optional JS heap snapshots; server measurement semantics are retained in job.metadata.'},null,2):exportVtt()],{type:record?'application/json':'text/vtt;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=outputName(record?'json':'vtt');a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);}catch(e){setError(String(e));}};
  useSaveOptions(active,[
+  {id:'recognition-csv',label:'認識結果の字幕（CSV）',description:'開始・終了・話者・本文を表形式で保存',disabled:!segments.length,run:()=>{if(!job)return;const url=URL.createObjectURL(new Blob([subtitleCsv(parseVtt(segmentsToVtt(segments)).cues)],{type:'text/csv;charset=utf-8'})),a=document.createElement('a');a.href=url;a.download=outputName('csv');a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);}},
   {id:'recognition-vtt',label:job?.status==='complete'?'認識結果の字幕（VTT）':'認識途中の字幕（VTT）',description:'文字起こしで確定した字幕を保存',disabled:!segments.length,run:()=>download()},
   {id:'recognition-record',label:'認識処理記録（JSON）',description:'この認識のモデル・処理時間・サーバー計測',disabled:!job,run:()=>download(true)},
  ]);
