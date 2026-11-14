@@ -117,9 +117,15 @@ class QuietRunCollector {
   readonly ranges: SilenceRange[] = [];
   private quietStart: number | null = null;
   private readonly thresholdPower: number;
+  private readonly minDurationMs: number;
+  private readonly paddingMs: number;
+  private readonly limit: number;
 
-  constructor(private readonly thresholdDb: number, private readonly minDurationMs: number, private readonly paddingMs: number, private readonly limit: number) {
+  constructor(thresholdDb: number, minDurationMs: number, paddingMs: number, limit: number) {
     this.thresholdPower = 10 ** (thresholdDb / 10);
+    this.minDurationMs = minDurationMs;
+    this.paddingMs = paddingMs;
+    this.limit = limit;
   }
 
   window(start: number, end: number, meanSquare: number): void {

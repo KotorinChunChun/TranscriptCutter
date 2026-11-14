@@ -1,16 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import ts from "typescript";
 import { parseVtt, serializeVtt } from "../src/lib/vtt.ts";
 import { buildDocument, createEditorState, getTranscriptTailCut } from "../src/lib/editor.ts";
 
-// Match the browser compiler while resolving its extensionless imports for Node.
-const source = (await readFile(new URL("../src/lib/comparison.ts", import.meta.url), "utf8"))
-  .replace('from "./editor"', `from "${new URL("../src/lib/editor.ts", import.meta.url).href}"`)
-  .replace('from "./vtt"', `from "${new URL("../src/lib/vtt.ts", import.meta.url).href}"`);
-const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
-const {
+import {
   createComparisonSession, addComparisonSources, setComparisonReference,
   removeComparisonSource, buildComparisonRows, getComparisonChoice,
   getComparisonSpeakers, getSelectedCues, getComparisonSummary,
@@ -18,7 +11,7 @@ const {
   toggleComparisonText, getComparisonSkippedRanges,
   createEditableComparison, adoptComparisonChoice, editComparisonCue,
   adoptAllComparisonText,
-} = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`);
+} from "../src/lib/comparison.ts";
 
 const cue = (id, text, start, end, speaker = "話者1") => ({ id, text, start, end, speaker, sourceIds: [id], sourceCount: 1 });
 const model = (id, cues, name = `モデル${id.toUpperCase()}`) => ({ id, name, fileName: `${id}.vtt`, cues, warnings: [] });

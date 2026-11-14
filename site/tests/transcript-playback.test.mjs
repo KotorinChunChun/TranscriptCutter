@@ -1,13 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import ts from "typescript";
 
-const source = (await readFile(new URL("../src/lib/transcript-playback.ts", import.meta.url), "utf8"))
-  .replace("from './audio-mute'", `from "${new URL("../src/lib/audio-mute.ts", import.meta.url).href}"`)
-  .replace('from "./media-plan"', `from "${new URL("../src/lib/media-plan.ts", import.meta.url).href}"`);
-const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
-const { buildPlaybackTimeline, resolvePlaybackPosition, buildTimedItemIndex, findActiveTimedItems, createTranscriptPlaybackController } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`);
+import { buildPlaybackTimeline, resolvePlaybackPosition, buildTimedItemIndex, findActiveTimedItems, createTranscriptPlaybackController } from "../src/lib/transcript-playback.ts";
 
 test("original playback ignores text deletions and the VTT cap, edited playback shares their union", () => {
   const timeline = buildPlaybackTimeline([{ start: 2000, end: 4000 }, { start: 3000, end: 5000 }, { start: 5000, end: 5500 }], 10_000, 12_000);
