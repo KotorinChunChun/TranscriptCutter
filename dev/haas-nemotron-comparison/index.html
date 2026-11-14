@@ -3,26 +3,28 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Haas・Nemotron比較 - TranscriptCutter - v0.1.1</title>
+  <title>Haas・発話検出比較 - TranscriptCutter - v0.1.1</title>
   <style>
     :root{color-scheme:light;font:16px/1.5 system-ui,sans-serif;color:#173e35;background:#f4f8f6}
     *{box-sizing:border-box}body{margin:0}header{background:#173e35;color:#fff;padding:9px 16px;display:flex;align-items:center;gap:12px;white-space:nowrap}header strong{font-size:18px}header span{margin-left:auto}main{max-width:1400px;margin:auto;padding:12px}h1,h2,h3,p{margin:0 0 8px}h1{font-size:22px}h2{font-size:19px}h3{font-size:17px}section,.panel{background:#fff;border:1px solid #b9d0c5;border-radius:6px;padding:12px;margin-bottom:12px}.setup{display:grid;grid-template-columns:minmax(260px,360px) 1fr;gap:14px}video{display:block;width:100%;max-height:210px;background:#101817;border-radius:4px}.actions,.downloads{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin:8px 0}button,a.button{font:inherit;border:1px solid #6b9586;border-radius:4px;padding:7px 11px;background:#fff;color:#175a49;cursor:pointer;text-decoration:none}button.primary{background:#08775f;color:#fff;border-color:#08775f}button:disabled{opacity:.45;cursor:default}button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid #359ba8;outline-offset:2px}button.time{font-variant-numeric:tabular-nums;padding:3px 7px;white-space:nowrap;background:#f1f7f3}.muted{color:#566f64}.small{font-size:16px}#status{font-weight:600;min-height:24px}#error{color:#9b2727;white-space:pre-wrap}progress{width:100%;height:12px}table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}th,td{text-align:right;padding:7px 10px;border-bottom:1px solid #d8e4de;vertical-align:top}th:first-child,td:first-child{text-align:left}thead{background:#e6f1eb}.table-wrap{overflow:auto}.method-name{font-weight:600;white-space:nowrap}.columns{display:grid;grid-template-columns:1fr 1fr;gap:12px}.transcript{border-top:1px solid #d3e1d9}.cue{padding:9px 0;border-bottom:1px solid #d3e1d9}.cue p{margin:5px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}.empty{padding:12px 0;color:#566f64}.region-list{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px;max-height:180px;overflow:auto}.region-list button{padding:4px 7px}.review-note{border-left:4px solid #9a7528;background:#fbf7ea;padding:8px 10px;margin:7px 0}.review-note p:last-child{margin-bottom:0}summary{cursor:pointer;font-weight:600}details>div{margin-top:8px}#source-info{overflow-wrap:anywhere}#saved-state{color:#566f64}.badge{display:inline-block;background:#e5f1eb;border-radius:4px;padding:2px 7px}a{color:#086957}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}
+    select{font:inherit;color:inherit;background:#fff;border:1px solid #6b9586;border-radius:4px;padding:7px;min-width:0;max-width:100%}.method-picker{display:flex;align-items:center;gap:8px;margin-bottom:8px}.method-picker select{flex:1}.measurement{display:block;font-size:16px;font-weight:400;white-space:normal;color:#566f64}.method-name{white-space:normal}
     @media(max-width:760px){.setup,.columns{grid-template-columns:1fr}header{gap:5px;padding:7px 10px}header strong{font-size:16px}header span{font-size:16px}.table-wrap{margin:0 -6px}th,td{padding:6px}main{padding:8px}}
   </style>
 </head>
 <body>
-  <header><strong>TranscriptCutter</strong><span>Haas・Nemotron比較</span></header>
+  <header><strong>TranscriptCutter</strong><span>Haas・発話検出比較</span></header>
   <main>
     <section class="setup" aria-label="比較する動画と実行操作">
       <div><video controls preload="metadata" src="./sample.mp4" aria-label="指定された5分の勉強会動画"></video></div>
       <div>
         <h1>同じ5分動画をブラウザー内で比較</h1>
-        <p class="muted">Haas 4bit ／ Nemotron INT8 ／ CPU（WASM・1スレッド）</p>
+        <p class="muted">Haas 4bit ／ Nemotron INT8・Silero VAD ／ CPU（WASM・1スレッド）</p>
         <div class="actions">
           <button id="prepare">動画から音声を準備</button>
           <button id="run-haas" disabled>Haas単独</button>
-          <button id="run-nemotron" disabled>Nemotron＋Haas</button>
-          <button id="run-both" class="primary" disabled>両方を順番に実行</button>
+          <button id="run-nemotron-long" disabled>Nemotron＋Haas（長め）</button>
+          <button id="run-silero" disabled>Silero VAD＋Haas（長め）</button>
+          <button id="run-three" class="primary" disabled>今回3条件を順番に実行</button>
           <button id="stop" disabled>中止</button>
         </div>
         <p id="status" role="status">実行前です</p>
@@ -33,19 +35,19 @@
     </section>
     <section aria-label="処理時間の比較">
       <h2>処理時間</h2>
-      <div class="table-wrap"><table><thead><tr><th>方式</th><th>モデル読込</th><th>Nemotron</th><th>区間抽出</th><th>Haas</th><th>処理計</th><th>読込込み総時間</th><th>Haas入力</th></tr></thead><tbody id="timing-body"><tr><td colspan="8">実行結果がありません</td></tr></tbody></table></div>
-      <p id="timing-note" class="muted" style="margin-top:8px">処理計はモデル読込を除く時間です。音声準備は両方式で共通に行い、別記します。</p>
+      <div class="table-wrap"><table><thead><tr><th>方式・計測日時</th><th>モデル読込</th><th>発話検出</th><th>Haas</th><th>読込込み総時間</th><th>Haas入力</th><th>認識回数</th></tr></thead><tbody id="timing-body"><tr><td colspan="7">実行結果がありません</td></tr></tbody></table></div>
+      <p id="timing-note" class="muted" style="margin-top:8px">処理計はモデル読込を除く時間です。共通の音声準備は別記します。前回の短区間方式は過去の記録です。</p>
     </section>
     <section id="review-section" hidden><h2>欠落・精度の確認</h2><div id="review"></div></section>
     <section>
       <h2>字幕の比較</h2>
       <p class="muted">左右はそれぞれの分割区間です。同じ行が同じ発言に対応するとは限りません。時刻を押すと元動画の該当区間を再生します。VTT時刻は分割位置による暫定値です。</p>
       <div class="columns" style="margin-top:8px">
-        <div><h3>Haas単独</h3><div id="haas-downloads" class="downloads"></div><div id="haas-transcript" class="transcript"><p class="empty">実行結果がありません</p></div></div>
-        <div><h3>Nemotron＋Haas</h3><div id="nemotron-downloads" class="downloads"></div><div id="nemotron-transcript" class="transcript"><p class="empty">実行結果がありません</p></div></div>
+        <div><label class="method-picker">左<select id="left-mode" aria-label="左に表示する方式"><option value="haas">Haas単独</option><option value="nemotron-haas">Nemotron＋Haas（前回・短区間）</option><option value="nemotron-grouped-haas">Nemotron＋Haas（長め）</option><option value="silero-grouped-haas">Silero VAD＋Haas（長め）</option></select></label><div id="haas-downloads" class="downloads"></div><div id="haas-transcript" class="transcript"><p class="empty">実行結果がありません</p></div></div>
+        <div><label class="method-picker">右<select id="right-mode" aria-label="右に表示する方式"><option value="haas">Haas単独</option><option value="nemotron-haas">Nemotron＋Haas（前回・短区間）</option><option value="nemotron-grouped-haas">Nemotron＋Haas（長め）</option><option value="silero-grouped-haas" selected>Silero VAD＋Haas（長め）</option></select></label><div id="nemotron-downloads" class="downloads"></div><div id="nemotron-transcript" class="transcript"><p class="empty">実行結果がありません</p></div></div>
       </div>
     </section>
-    <section><details id="removed-details"><summary id="removed-summary">NemotronがHaas入力から除外した区間</summary><div><p class="muted">除外区間を再生し、声が落ちていないか確認します。発話確率0.5・前後0.25秒保持・0.5秒以下の間隔は結合します。</p><div id="removed" class="region-list"></div></div></details></section>
+    <section><details id="removed-details"><summary id="removed-summary">右の方式がHaas入力から除外した区間</summary><div><p id="removed-note" class="muted">除外区間を再生し、声が落ちていないか確認します。</p><div id="removed" class="region-list"></div></div></details></section>
     <section><details id="reference-details"><summary>既存Whisper字幕を照合用に表示（正解字幕ではありません）</summary><div id="reference"><p class="empty">開くと読み込みます</p></div></details></section>
   </main>
   <script type="module" src="./client.mjs"></script>

@@ -28,6 +28,18 @@ function merge(regions, gap=0) {
 
 const seconds=regions=>regions.reduce((sum,r)=>sum+r.end-r.start,0);
 
+/** Keep short pauses inside an ASR group without concatenating distant time ranges. */
+export function regionsFromSegments(segments,duration,{pad=.25,mergeGap=3}={}) {
+  if(!Number.isFinite(duration)||duration<0||!Number.isFinite(pad)||pad<0||!Number.isFinite(mergeGap)||mergeGap<0)throw Error('Invalid region settings');
+  for(const s of segments)if(!Number.isFinite(s.start)||!Number.isFinite(s.end)||s.end<s.start)throw Error('Invalid source segment');
+  const speech=merge(segments.map(s=>({start:Math.max(0,s.start),end:Math.min(duration,s.end)})).filter(s=>s.end>s.start));
+  const regions=merge(speech.map(s=>({start:Math.max(0,s.start-pad),end:Math.min(duration,s.end+pad)})),mergeGap);
+  const removed=[];let cursor=0;
+  for(const r of regions){if(r.start>cursor)removed.push({start:cursor,end:r.start});cursor=r.end;}
+  if(cursor<duration)removed.push({start:cursor,end:duration});
+  return {regions,removed,speechSeconds:seconds(speech),retainedSeconds:seconds(regions),speakerSegments:[]};
+}
+
 /** Frame probabilities -> original-media seconds; simultaneous speech is counted once. */
 export function speechRegions(probs,numFrames,duration,{threshold=.5,pad=.25,mergeGap=.5}={}) {
   if (!Number.isInteger(numFrames) || numFrames<0 || !Number.isFinite(duration) || duration<0) {

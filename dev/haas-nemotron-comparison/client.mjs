@@ -1,16 +1,18 @@
 const $ = selector => document.querySelector(selector);
 const video = $('video');
-const controls = {prepare:$('#prepare'),haas:$('#run-haas'),nemotron:$('#run-nemotron'),both:$('#run-both'),stop:$('#stop')};
+const controls = {prepare:$('#prepare'),haas:$('#run-haas'),long:$('#run-nemotron-long'),silero:$('#run-silero'),three:$('#run-three'),stop:$('#stop')};
 let prepared = null, busy = false, currentWorker = null, cancelRun = null, stopRequested = false, playUntil = null;
 let runs = [], review = null;
 const objectUrls = [];
-const names = {haas:'Haas単独','nemotron-haas':'Nemotron＋Haas'};
+const modes = ['haas','nemotron-haas','nemotron-grouped-haas','silero-grouped-haas'];
+const names = {haas:'Haas単独','nemotron-haas':'Nemotron＋Haas（前回・短区間）','nemotron-grouped-haas':'Nemotron＋Haas（長め）','silero-grouped-haas':'Silero VAD＋Haas（長め）'};
+const selectedModes = () => [$('#left-mode').value,$('#right-mode').value];
 const seconds = value => Number.isFinite(value) ? `${value.toFixed(2)}秒` : '—';
 const shortTime = value => {const tenth=Math.max(0,Math.round(value*10)),whole=Math.floor(tenth/10);return `${Math.floor(whole/60)}:${String(whole%60).padStart(2,'0')}.${tenth%10}`;};
 function clock(value) {const ms=Math.max(0,Math.round(value*1000));return `${String(Math.floor(ms/3600000)).padStart(2,'0')}:${String(Math.floor(ms/60000)%60).padStart(2,'0')}:${String(Math.floor(ms/1000)%60).padStart(2,'0')}.${String(ms%1000).padStart(3,'0')}`;}
 function node(tag,text,className) {const element=document.createElement(tag);if(text!=null)element.textContent=text;if(className)element.className=className;return element;}
 function setStatus(message,fraction=null) {$('#status').textContent=message;const bar=$('#progress');if(Number.isFinite(fraction))bar.value=Math.min(1,Math.max(0,fraction));else bar.removeAttribute('value');}
-function setBusy(value) {busy=value;controls.prepare.disabled=value;for(const key of ['haas','nemotron','both'])controls[key].disabled=value||!prepared;controls.stop.disabled=!value;}
+function setBusy(value) {busy=value;controls.prepare.disabled=value;for(const key of ['haas','long','silero','three'])controls[key].disabled=value||!prepared;controls.stop.disabled=!value;}
 function showError(error) {$('#error').textContent=error?.message??String(error);}
 function playRange(start,end) {playUntil=Number.isFinite(end)&&end>start?end:null;video.currentTime=Math.max(0,start);void video.play().catch(showError);}
 video.addEventListener('timeupdate',()=>{if(playUntil!=null&&video.currentTime>=playUntil){video.pause();playUntil=null;}});
@@ -58,11 +60,12 @@ function workerRun(mode) {
 
 async function execute(modes) {
   if(busy||!prepared)return;setBusy(true);stopRequested=false;$('#error').textContent='';
+  const benchmarkBatchId=crypto.randomUUID(),benchmarkStartedAt=new Date().toISOString();
   try {
     for(const mode of modes) {
       if(stopRequested)break;setStatus(`${names[mode]}：実行を開始`,0);
       const result=await workerRun(mode);
-      Object.assign(result,{sourceSha256:prepared.sourceSha256,sourceBytes:prepared.sourceBytes,audioDecodeSeconds:prepared.audioDecodeSeconds,prepareSeconds:prepared.prepareSeconds,observedAt:new Date().toISOString()});
+      Object.assign(result,{sourceSha256:prepared.sourceSha256,sourceBytes:prepared.sourceBytes,audioDecodeSeconds:prepared.audioDecodeSeconds,prepareSeconds:prepared.prepareSeconds,benchmarkBatchId,benchmarkStartedAt,benchmarkLabel:result.benchmarkLabel??(modes.length>1?'今回の連続比較':'今回の個別実行'),observedAt:new Date().toISOString()});
       runs.push(result);render();
       try {const response=await fetch('./report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(result)});if(!response.ok)throw Error(`HTTP ${response.status}`);$('#saved-state').textContent='このブラウザーで実行した結果を保存しました';}
       catch(error){$('#saved-state').textContent=`認識は完了しましたが、処理記録の保存に失敗しました：${error.message}`;}
@@ -91,22 +94,25 @@ function renderMethod(mode,prefix) {
 }
 function renderTiming() {
   const body=$('#timing-body');body.replaceChildren();
-  for(const mode of ['haas','nemotron-haas']) {
+  for(const mode of modes) {
     const run=latest(mode);if(!run)continue;
-    const row=node('tr');row.append(node('td',names[mode],'method-name'));
-    const processing=Number.isFinite(run.processingSeconds)?run.processingSeconds:Number.isFinite(run.totalSeconds)&&Number.isFinite(run.loadSeconds)?Math.max(0,run.totalSeconds-run.loadSeconds):null;
-    for(const value of [run.loadSeconds,run.diarizationSeconds??0,run.regionSeconds??0,run.haasSeconds,processing,run.totalSeconds,run.retainedSeconds??run.inputSeconds])row.append(node('td',seconds(value)));
+    const row=node('tr'),label=node('td',names[mode],'method-name');
+    let date='日時未記録';if(run.observedAt){const parsed=new Date(run.observedAt);if(Number.isFinite(parsed.getTime()))date=parsed.toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',hour12:false});}
+    label.append(node('span',`${run.benchmarkLabel??(mode==='nemotron-haas'?'前回の記録':'別計測の記録')} ／ ${date}`,'measurement'));row.append(label);
+    for(const value of [run.loadSeconds,run.detectorSeconds??run.diarizationSeconds??run.sileroSeconds??0,run.haasSeconds,run.totalSeconds,run.retainedSeconds??run.inputSeconds])row.append(node('td',seconds(value)));
+    row.append(node('td',`${run.recognitionCalls??run.chunkCount??run.segments?.length??0}回`));
     body.append(row);
   }
-  if(!body.childNodes.length){const row=node('tr'),cell=node('td','実行結果がありません');cell.colSpan=8;row.append(cell);body.append(row);}
-  const a=latest('haas'),b=latest('nemotron-haas'),notes=['処理計はモデル読込を除く時間です。音声準備は両方式で共通に行い、別記します。'];
-  if(a?.totalSeconds&&b?.totalSeconds)notes.push(`読込込み総時間：Nemotron＋HaasはHaas単独の${(b.totalSeconds/a.totalSeconds).toFixed(2)}倍。`);
+  if(!body.childNodes.length){const row=node('tr'),cell=node('td','実行結果がありません');cell.colSpan=7;row.append(cell);body.append(row);}
+  const [left,right]=selectedModes(),a=latest(left),b=latest(right),notes=['総時間はモデル読込・発話検出・区間抽出・Haasを含みます。共通の音声準備は別記。前回の短区間方式は過去の記録です。'];
+  if(a?.totalSeconds&&b?.totalSeconds&&left!==right){const sameBatch=a.benchmarkBatchId&&a.benchmarkBatchId===b.benchmarkBatchId;notes.push(`${sameBatch?'同じ連続実行組':'別々の実行記録'}の読込込み総時間：右は左の${(b.totalSeconds/a.totalSeconds).toFixed(2)}倍。`);}
   const last=runs.at(-1);if(last?.prepareSeconds)notes.push(`共通の音声準備 ${seconds(last.prepareSeconds)}（うちデコード ${seconds(last.audioDecodeSeconds)}）。`);
   $('#timing-note').textContent=notes.join(' ');
 }
 function renderRemoved() {
-  const run=latest('nemotron-haas'),container=$('#removed');container.replaceChildren();
-  $('#removed-summary').textContent=run?`NemotronがHaas入力から除外した区間：${run.removed?.length??0}件・計${seconds(run.removedSeconds)}`:'NemotronがHaas入力から除外した区間';
+  const mode=$('#right-mode').value,run=latest(mode),container=$('#removed');container.replaceChildren();
+  $('#removed-summary').textContent=run?`${names[mode]}がHaas入力から除外した区間：${run.removed?.length??0}件・計${seconds(run.removedSeconds)}`:`${names[mode]}の除外区間（未実行）`;
+  $('#removed-note').textContent='除外区間を再生し、声が落ちていないか確認します。'+(mode==='haas'?'Haas単独は元音声を全て入力します。':mode==='nemotron-haas'?'前回：発話確率0.5・前後0.25秒保持・0.5秒以下の間隔を結合。':'長め：発話の前後0.25秒保持・3秒以下の間隔を結合・約25秒ごとに静かな位置で分割。');
   for(const region of run?.removed??[])container.append(timeButton(region.start,region.end));
   if(!run?.removed?.length)container.append(node('p',run?'除外区間はありません':'実行後に表示します','muted'));
 }
@@ -121,18 +127,20 @@ function renderReview() {
     const note=node('div',null,'review-note');
     if(Number.isFinite(item.start))note.append(timeButton(item.start,item.end));
     if(item.title)note.append(node('strong',item.title));
-    for(const key of ['heard','haas','nemotron','finding','note'])if(item[key])note.append(node('p',`${({heard:'音声確認',haas:'Haas単独',nemotron:'Nemotron＋Haas',finding:'確認結果',note:'注記'})[key]}：${item[key]}`));
+    for(const key of ['heard','haas','nemotron','nemotronGrouped','silero','finding','note'])if(item[key])note.append(node('p',`${({heard:'音声確認',haas:'Haas単独',nemotron:'Nemotron＋Haas（前回・短区間）',nemotronGrouped:'Nemotron＋Haas（長め）',silero:'Silero VAD＋Haas（長め）',finding:'確認結果',note:'注記'})[key]}：${item[key]}`));
     container.append(note);
   }
   const known=new Set(['summary','notes','observations']);const other=Object.fromEntries(Object.entries(review).filter(([key])=>!known.has(key)));
   if(Object.keys(other).length){const details=node('details'),summary=node('summary','確認記録の詳細');details.append(summary,node('pre',JSON.stringify(other,null,2)));container.append(details);}
 }
-function render() {objectUrls.splice(0).forEach(url=>URL.revokeObjectURL(url));renderTiming();renderMethod('haas','haas');renderMethod('nemotron-haas','nemotron');renderRemoved();renderReview();}
+function render() {objectUrls.splice(0).forEach(url=>URL.revokeObjectURL(url));const [left,right]=selectedModes();renderTiming();renderMethod(left,'haas');renderMethod(right,'nemotron');renderRemoved();renderReview();}
 
 controls.prepare.addEventListener('click',()=>void prepareAudio());
 controls.haas.addEventListener('click',()=>void execute(['haas']));
-controls.nemotron.addEventListener('click',()=>void execute(['nemotron-haas']));
-controls.both.addEventListener('click',()=>void execute(['haas','nemotron-haas']));
+controls.long.addEventListener('click',()=>void execute(['nemotron-grouped-haas']));
+controls.silero.addEventListener('click',()=>void execute(['silero-grouped-haas']));
+controls.three.addEventListener('click',()=>void execute(['haas','nemotron-grouped-haas','silero-grouped-haas']));
+$('#left-mode').addEventListener('change',render);$('#right-mode').addEventListener('change',render);
 controls.stop.addEventListener('click',()=>{stopRequested=true;cancelRun?.();});
 let referenceLoaded=false;
 $('#reference-details').addEventListener('toggle',async()=>{

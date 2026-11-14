@@ -2,7 +2,8 @@ import * as ort from './ort/ort.wasm.min.mjs';
 import {logMel, splitAtQuietPoints} from './haas/frontend.mjs';
 import {decodeTdt} from './haas/decoder.mjs';
 import {loadNemotron} from './nemotron.mjs';
-import {speechRegions} from './speech-regions.mjs';
+import {loadSilero} from './silero.mjs';
+import {speechRegions,regionsFromSegments} from './speech-regions.mjs';
 
 ort.env.wasm.numThreads = 1;
 ort.env.wasm.proxy = false;
@@ -20,11 +21,12 @@ self.onmessage = async ({data}) => {
   busy = true;
   const started = performance.now();
   const sessions = [];
-  let nemo;
+  let nemo,silero;
   try {
     const {mode, audio} = data;
-    if (!['haas','nemotron-haas'].includes(mode) || !(audio instanceof Float32Array) || data.sampleRate !== 16000) throw Error('入力形式が一致しません');
+    if (!['haas','nemotron-haas','nemotron-grouped-haas','silero-grouped-haas'].includes(mode) || !(audio instanceof Float32Array) || data.sampleRate !== 16000) throw Error('入力形式が一致しません');
     const duration = audio.length / 16000;
+    const grouped=mode.includes('grouped'),mergeGap=grouped?3:.5,chunkSeconds=grouped?25:28;
     progress('load','Haasモデルを読み込み中',0);
     const [frontend, decoding, tokens] = await Promise.all(['frontend','decoding','tokens'].map(json));
     const encoder = await ort.InferenceSession.create('./model/haas/int4-onecomp/encoder.onnx', {
@@ -37,9 +39,9 @@ self.onmessage = async ({data}) => {
     const joint = await ort.InferenceSession.create('./model/haas/common/joint.onnx',{executionProviders:['wasm']});
     sessions.push(joint);
     const haasLoadSeconds = seconds(started);
-    let nemotronLoadSeconds=0,diarizationSeconds=0,regionSeconds=0;
+    let nemotronLoadSeconds=0,sileroLoadSeconds=0,sileroSeconds=0,diarizationSeconds=0,regionSeconds=0;
     let selected = {regions:[{start:0,end:duration}],removed:[],speakerSegments:[],retainedSeconds:duration,speechSeconds:duration};
-    if (mode === 'nemotron-haas') {
+    if (mode.startsWith('nemotron')) {
       let stageStart=performance.now();
       nemo=await loadNemotron(ort,{baseUrl:'./model/nemotron/',onProgress:message=>progress('load',message,0)});
       nemotronLoadSeconds=seconds(stageStart);
@@ -47,7 +49,18 @@ self.onmessage = async ({data}) => {
       const diar=await nemo.run(audio,fraction=>progress('nemotron',`Nemotronで発話区間を解析中 ${Math.round(fraction*100)}%`,fraction));
       diarizationSeconds=seconds(stageStart);
       stageStart=performance.now();
-      selected=speechRegions(diar.probs,diar.numFrames,duration,{threshold:.5,pad:.25,mergeGap:.5});
+      selected=speechRegions(diar.probs,diar.numFrames,duration,{threshold:.5,pad:.25,mergeGap});
+      regionSeconds=seconds(stageStart);
+    } else if(mode==='silero-grouped-haas') {
+      let stageStart=performance.now();
+      silero=await loadSilero(ort,{modelUrl:'./model/silero/silero_vad.onnx',onProgress:message=>progress('load',message,0)});
+      sileroLoadSeconds=seconds(stageStart);
+      stageStart=performance.now();
+      const vad=await silero.run(audio,fraction=>progress('silero',`Sileroで発話区間を解析中 ${Math.round(fraction*100)}%`,fraction));
+      sileroSeconds=seconds(stageStart);
+      stageStart=performance.now();
+      selected=regionsFromSegments(vad.sourceSegments,duration,{pad:.25,mergeGap});
+      selected.sourceSegments=vad.sourceSegments;
       regionSeconds=seconds(stageStart);
     }
     const chunks=[];
@@ -55,7 +68,7 @@ self.onmessage = async ({data}) => {
       const from=Math.max(0,Math.round(region.start*16000));
       const to=Math.min(audio.length,Math.round(region.end*16000));
       if (to-from<320) throw Error('20ms未満の認識区間です');
-      for (const [a,b] of splitAtQuietPoints(audio.subarray(from,to))) chunks.push([from+a,from+b]);
+      for (const [a,b] of splitAtQuietPoints(audio.subarray(from,to),{chunkSeconds})) chunks.push([from+a,from+b]);
     }
     const haasStart=performance.now(),segments=[];
     let featureSeconds=0,encoderSeconds=0,decodeSeconds=0;
@@ -76,17 +89,18 @@ self.onmessage = async ({data}) => {
     }
     const haasSeconds=seconds(haasStart);
     postMessage({action:'result',mode,runId:crypto.randomUUID(),inputSeconds:duration,
-      loadSeconds:haasLoadSeconds+nemotronLoadSeconds,haasLoadSeconds,nemotronLoadSeconds,
-      diarizationSeconds,regionSeconds,haasSeconds,totalSeconds:seconds(started),featureSeconds,encoderSeconds,decodeSeconds,
+      loadSeconds:haasLoadSeconds+nemotronLoadSeconds+sileroLoadSeconds,haasLoadSeconds,nemotronLoadSeconds,sileroLoadSeconds,
+      diarizationSeconds,sileroSeconds,detectorSeconds:diarizationSeconds+sileroSeconds,regionSeconds,haasSeconds,totalSeconds:seconds(started),featureSeconds,encoderSeconds,decodeSeconds,
       retainedSeconds:selected.retainedSeconds,removedSeconds:duration-selected.retainedSeconds,
-      speechSeconds:selected.speechSeconds,regions:selected.regions,removed:selected.removed,speakerSegments:selected.speakerSegments,
-      segments,timestampType:'original_chunk_estimated',settings:{threshold:.5,pad:.25,mergeGap:.5,threads:1,provider:'wasm',haasRevision:'e46a4b107ffba60336eb3de9745da6f628cfae35',nemotronRevision:'46642c09b3bd014c5ceb19d20524fa2f1dc27dee',ort:'1.31.1'},
+      speechSeconds:selected.speechSeconds,regions:selected.regions,removed:selected.removed,speakerSegments:selected.speakerSegments,sourceSegments:selected.sourceSegments,
+      segments,timestampType:'original_chunk_estimated',settings:{threshold:.5,pad:.25,mergeGap,chunkSeconds,grouping:grouped?'nearby-gaps-3s-chunks-25s':'original',detector:mode==='haas'?'none':mode.startsWith('silero')?'silero':'nemotron',threads:1,provider:'wasm',haasRevision:'e46a4b107ffba60336eb3de9745da6f628cfae35',nemotronRevision:'46642c09b3bd014c5ceb19d20524fa2f1dc27dee',sileroRevision:'066409f3d9db45a30d21dfcbf9147826ffdd7052',ort:'1.31.1'},
     });
   } catch(error) {
     postMessage({action:'error',message:error.stack??String(error),elapsedSeconds:seconds(started)});
   } finally {
     for(const session of sessions) await session.release();
     await nemo?.dispose?.();
+    await silero?.dispose?.();
     busy=false;
   }
 };

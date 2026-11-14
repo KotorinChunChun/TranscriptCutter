@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {speechRegions} from './speech-regions.mjs';
+import {speechRegions,regionsFromSegments} from './speech-regions.mjs';
 
 const input=(frames,spans)=>{
   const probs=new Float32Array(frames*8);
@@ -9,6 +9,21 @@ const input=(frames,spans)=>{
   }
   return probs;
 };
+
+test('長めの認識区間は短い間を残し、長い無発話を飛び越えて結合しない',()=>{
+  const r=regionsFromSegments([{start:1,end:2},{start:5,end:6},{start:20,end:21}],30);
+  assert.deepEqual(r.regions,[{start:.75,end:6.25},{start:19.75,end:21.25}]);
+  assert.equal(r.speechSeconds,3);assert.equal(r.retainedSeconds,7);
+  assert.deepEqual(r.removed,[{start:0,end:.75},{start:6.25,end:19.75},{start:21.25,end:30}]);
+});
+
+test('一般VADの端・重複・全無発話でも元時刻と総秒数を保つ',()=>{
+  const r=regionsFromSegments([{start:-.2,end:.3},{start:.1,end:1.5},{start:9.95,end:12}],10);
+  assert.deepEqual(r.regions,[{start:0,end:1.75},{start:9.7,end:10}]);
+  assert.ok(Math.abs(r.retainedSeconds+r.removed.reduce((n,s)=>n+s.end-s.start,0)-10)<1e-9);
+  assert.deepEqual(regionsFromSegments([],10).removed,[{start:0,end:10}]);
+  assert.throws(()=>regionsFromSegments([{start:3,end:2}],10));
+});
 
 test('話者が重なっても発話秒数と入力区間を二重計上しない',()=>{
   const r=speechRegions(input(200,[[10,100,0],[50,150,1]]),200,2,{pad:0,mergeGap:0});
