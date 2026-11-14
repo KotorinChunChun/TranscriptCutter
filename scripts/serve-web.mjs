@@ -100,7 +100,7 @@ export function createWebServer({directory=fileURLToPath(new URL('../dist-web/',
    if(assets){path=requested==='/'?'/index.html':requested;if(!assets.has(path))throw Error();body=assets.get(path);}
    else{path=resolve(root,'.'+requested);if(path!==root&&!path.startsWith(root+sep))throw Error();if((await stat(path)).isDirectory())path=resolve(path,'index.html');body=await readFile(path);}
    const type={'.html':'text/html; charset=utf-8','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.ico':'image/x-icon','.wasm':'application/wasm'}[extname(path)]??'application/octet-stream';
-   res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self' blob: 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob: https://cdn.jsdelivr.net https://huggingface.co https://*.huggingface.co https://*.hf.co; worker-src 'self' blob:; object-src 'none'; frame-src 'none'; base-uri 'self'");
+   res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self' blob: 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob: https://cdn.jsdelivr.net https://huggingface.co https://*.huggingface.co https://*.hf.co https://raw.githubusercontent.com/snakers4/silero-vad/; worker-src 'self' blob:; object-src 'none'; frame-src 'none'; base-uri 'self'");
    res.writeHead(200,{'Content-Type':type});res.end(req.method==='HEAD'?undefined:body);
   }catch{res.writeHead(404).end('見つかりません。');}
  };

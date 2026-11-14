@@ -41,3 +41,4 @@ html,body{height:100%;overflow:hidden}
 .browser-model-message{margin:6px 0 0;overflow-wrap:anywhere}
 .browser-model-message:empty{display:none}
 .browser-gpu-status{margin-left:auto;color:#426c58}
+.browser-speaker-options{display:grid;gap:8px;margin-top:10px;border-top:1px solid #d7e3dc;padding-top:8px}.browser-speaker-options>label{display:flex;align-items:center;gap:10px}.browser-speaker-options>label select{flex:1;min-width:0}.browser-auxiliary-model{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.browser-auxiliary-model>div{flex:1;min-width:200px}.browser-auxiliary-model strong{font-weight:500}.browser-result-speaker{white-space:normal;min-width:90px;max-width:180px;overflow-wrap:anywhere}

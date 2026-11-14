@@ -21,6 +21,11 @@ test('names identify engine, model, host and partial output without URL credenti
  assert.doesNotMatch(transcriptionName(job,'会議.mp4','http://user:password@server'),/password|user:/);
 });
 test('range progress excludes the skipped prefix of the source video',()=>{assert.deepEqual(recognitionProgress({rangeStart:60,rangeEnd:90,processedUntil:75}),{from:60,to:90,done:75,fraction:0.5});});
+
+test('local Haas exports identify browser execution and keep the selected model',()=>{
+ const name=transcriptionName({id:'1234567890',status:'complete',engine:'browser-haas',modelId:'haas-ja'},'会議.mp4','');
+ assert.match(name,/会議__browser-this-PC__browser-haas__haas-ja__complete__12345678.vtt/);
+});
 test('a stale network error does not replace the new job status',async()=>{
  let fail;const wait=new Promise((_,reject)=>fail=reject);const reader=new RecognitionResults({request:async()=>wait,segments:async()=>[]});reader.select('old');const pending=reader.refresh();reader.select('new');fail(Error('old offline'));assert.equal(await pending,null);
 });

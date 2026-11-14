@@ -21,7 +21,7 @@ export class RecognitionResults {
 const safe=(value:unknown)=>String(value??'unknown').normalize('NFKC').replace(/[<>:"/\\|?*\x00-\x1f]/g,'-').replace(/\s+/g,'_').replace(/[. ]+$/g,'').slice(0,100)||'unknown';
 export function transcriptionName(job:Job,source:string,serverUrl:string,extension='vtt'){
  let origin='server';try{const u=new URL(serverUrl);origin=['localhost','127.0.0.1','[::1]'].includes(u.hostname)?'this-PC':`server-${u.hostname}${u.port?'-'+u.port:''}`;}catch{/* Name stays generic; never copy raw URL or credentials. */}
- if(job.engine==='browser-whisper')origin='browser-this-PC';
+ if(job.engine==='browser-whisper'||job.engine==='browser-haas')origin='browser-this-PC';
  return `${safe(source.replace(/\.[^.]+$/,''))}__${safe(origin)}__${safe(job.engine??job.metadata?.engineId)}__${safe(job.modelId??job.metadata?.modelId)}__${job.status==='complete'?'complete':'partial'}__${safe(job.id.slice(0,8))}.${extension}`;
 }
 export function recognitionProgress(job:Job|null){
