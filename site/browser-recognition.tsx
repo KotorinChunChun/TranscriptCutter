@@ -1,4 +1,5 @@
 import {subtitleCsv} from './src/lib/subtitle-csv';
+import {isRecognitionMediaName} from './src/lib/media-file';
 import {parseVtt} from './src/lib/vtt';
 import {SaveMenu,useSaveOptions} from './save-menu';
 import {useEffect,useMemo,useRef,useState} from 'react';
@@ -8,7 +9,7 @@ import {fileKey,confirmAction} from './browser';
 import {loadSpeechPreferences,saveSpeechPreferences} from './speech-preferences';
 import {BrowserWhisper,browserWhisperModels,browserWhisperInstalled,browserWhisperCached,probeBrowserWhisperGPU,removeBrowserWhisper,openWhisperAudio,whisperAudioChunk} from './browser-whisper';
 import {whisperSegments,type BrowserWhisperModel} from './browser-whisper-config';
-import {whisperDtype,whisperDevices,resolveWhisperDevice,whisperDeviceLabel,type WhisperDevice,type WhisperGpuStatus} from './browser-whisper-device';
+import {whisperDtype,whisperDevices,resolveWhisperDevice,whisperDeviceLabel,type WhisperGpuStatus} from './browser-whisper-device';
 import {finishEstimate} from './recognition-options';
 import {useRecognitionRange,RecognitionRangeControls} from './recognition-range-controls';
 import {MediaDrop} from './media-drop';
@@ -50,7 +51,7 @@ export function BrowserRecognition({active,onTransfer,onActivity,sourceControls}
  const selectDevice=(id:string,value:string)=>{if(working||checkingGpu)return;const next={...devices,[id]:resolveWhisperDevice(value,gpu)};engine.stop();setDevices(next);saveSpeechPreferences('http://browser-whisper.local/',{modelId,mode:'none',devices:next});setMessage('');};
  const removeModel=async(model:BrowserWhisperModel)=>{if(working||!(await confirmAction(model.label+'（CPU/GPU両方式）をこのブラウザーから削除します。再利用には再導入が必要です。')))return;setWorking(true);setDeleting(model.id);setOperationModel(model.id);setError('');const finish=beginMetric('browser-whisper-delete',{modelId:model.id});try{engine.stop();await removeBrowserWhisper(model);await check();finish();setMessage(model.label+'を削除しました');}catch(error){finish('error');setError(String(error));}finally{setWorking(false);setDeleting('');setOperationModel('');}};
  const speed=(id:string)=>{const seconds=Number(job?.metadata?.runSeconds),length=Number(job?.rangeEnd??0)-Number(job?.rangeStart??0);return job?.status==='complete'&&job.engine==='browser-whisper'&&job.modelId===id&&(job.metadata?.executionDevice??'wasm')===deviceFor(id)&&seconds>0&&length>0?(length/seconds).toFixed(1)+'倍速':'未測定';};
- const load=(selected:File)=>{if(working)return;if(!/\.(mp4|mov|mkv|webm|avi|m4v|wmv|mts|m2ts|wav|mp3|m4a|ogg|flac|aac)$/i.test(selected.name)){setError('動画・音声を選択してください。');return;}setFile(selected);setUrl(URL.createObjectURL(selected));setError('');if(sourceKey.current!==fileKey(selected)){setJob(null);setSegments([]);}};
+ const load=(selected:File)=>{if(working)return;if(!isRecognitionMediaName(selected.name)){setError('動画・音声を選択してください。');return;}setFile(selected);setUrl(URL.createObjectURL(selected));setError('');if(sourceKey.current!==fileKey(selected)){setJob(null);setSegments([]);}};
  const recognize=async()=>{
   const device=deviceFor(model.id);if(!file||working||checkingGpu||!installed[model.id+':'+device])return;let bounds;try{bounds=range.request();}catch(error){setError(String(error));return;}
   const abort=new AbortController();controller.current=abort;setWorking(true);setError('');setMessage('音声を準備中');setSegments([]);sourceKey.current=fileKey(file);

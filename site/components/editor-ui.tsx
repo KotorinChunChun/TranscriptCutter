@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Play, RotateCcw, X } from "lucide-react";
 import { formatTime, parseTimestamp } from "@/src/lib/vtt";
-import type { CutRecord } from "@/src/lib/editor";
+import { getSpeakerParts, type CutRecord } from "@/src/lib/editor";
 
 export const PRECISION_LABEL: Record<string, string> = { word: "単語時刻の候補", cue: "字幕の時刻", estimated: "推定時刻", audio: "音量から検出", gap: "無音未確認", manual: "手動指定" };
 export const KIND_LABEL: Record<string, string> = { word: "単語", selection: "選択範囲", line: "行", filler: "フィラー", silence: "無音", gap: "字幕の空白", manual: "範囲指定", tail: "VTT終了後" };
@@ -15,6 +15,13 @@ export function Modal({title,eyebrow,children,footer,onClose,wide=false}:{title:
     if((e.ctrlKey||e.metaKey)&&["k","z","s"].includes(e.key.toLowerCase()))e.stopPropagation();
     if(e.key==="Tab"){const items=[...(ref.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea,a[href],[tabindex="0"]')??[])];const first=items[0],last=items.at(-1);if(e.shiftKey&&(document.activeElement===first||document.activeElement===ref.current)){e.preventDefault();last?.focus();}else if(!e.shiftKey&&(document.activeElement===last||document.activeElement===ref.current)){e.preventDefault();first?.focus();}}
   }}><div className="modal-header"><div>{eyebrow&&<div className="eyebrow">{eyebrow}</div>}<h2 className="modal-title" id="dialog-heading">{title}</h2></div><button className="icon-button" aria-label="閉じる" onClick={onClose}><X size={20}/></button></div><div className="modal-body">{children}</div>{footer&&<div className="modal-footer">{footer}</div>}</div></div>;
+}
+
+export const SPEAKER_PALETTE=[{color:"#16816b",bg:"#e7f3ee",bubble:"#f0f7f3"},{color:"#a77628",bg:"#faf0dc",bubble:"#fcf8ef"},{color:"#8270b3",bg:"#eeeaf7",bubble:"#f5f2fa"},{color:"#4b83aa",bg:"#e8f1f8",bubble:"#f1f7fb"}];
+const MUTED_SPEAKER={color:"#788587",bg:"#eef1f1",bubble:"#f5f7f7"};
+/** Unknown and compound speakers share the muted colors; others cycle through the palette by first appearance. */
+export function speakerPalette(canonical:string|null,speakers:readonly string[]){
+  return !canonical||getSpeakerParts(canonical).length>1?MUTED_SPEAKER:SPEAKER_PALETTE[Math.max(0,speakers.indexOf(canonical))%SPEAKER_PALETTE.length];
 }
 
 export function Highlight({text,query}:{text:string;query:string}) {
