@@ -78,7 +78,7 @@ function activateWithKeyboard(event: KeyboardEvent<HTMLSpanElement>, action: () 
 export const TranscriptToken = memo(function TranscriptToken({ token, spans, showDeleted, interactionMode, canPlay, query, active = false, playbackMode = "original", onDelete, onRestore, onSeek, shouldIgnoreClick }: TranscriptTokenProps) {
   const chunks = useMemo(() => sourceChunks(token, spans), [token, spans]);
   const hasDeletedChunk = chunks.some(chunk => chunk.deleted);
-  const wordTitle = `クリックでこの単語「${token.text.replace(/[\r\n]+/g, "")}」${hasDeletedChunk ? "の残り" : ""}を削除 · 推定 ${formatTime(token.start, true)}–${formatTime(token.end, true)}`;
+  const wordTitle = `クリックでこの単語「${token.text.replace(/[\r\n]+/g, "")}」${hasDeletedChunk ? "の残り" : ""}を削除 · カット時刻は単語時刻を優先し、未対応部分は推定`;
 
   return <>{chunks.map(chunk => {
     if (chunk.deleted && !showDeleted) return null;

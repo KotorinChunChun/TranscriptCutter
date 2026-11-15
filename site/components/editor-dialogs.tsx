@@ -178,7 +178,7 @@ export function CutsDialog({ cuts, rangeCount, removedMs, tailNotice, automaticT
       <div className="export-stat"><span>重複を統合した区間</span><strong>{rangeCount}<small>件</small></strong></div>
       <div className="export-stat"><span>削除する長さ</span><strong>{(removedMs / 1000).toFixed(2)}<small>秒</small></strong></div>
     </div>
-    <div className="inline-notice">時刻はすべて元動画の先頭が基準です。単語・フィラーの時刻は推定です。動画で確認し、開始・終了を修正できます。時刻の修正はカット範囲に適用し、削除した文字の範囲は保持します。</div>
+    <div className="inline-notice">時刻はすべて元動画の先頭が基準です。単語・フィラーには単語時刻の候補を使い、未対応部分は推定します。動画で確認し、開始・終了を修正できます。時刻の修正はカット範囲に適用し、削除した文字の範囲は保持します。</div>
     <p className="form-help">{tailNotice}{mediaDuration === undefined && " JSONは終端指定を保存できます。CSVには元動画の長さが必要です。"}</p>
     <div className="cut-list">
       {[...cuts].sort((a, b) => a.start - b.start).map(cut => <CutRow key={cut.id} cut={cut} canPlay={hasMedia} onSeek={onSeek} onUpdate={(start, end) => onUpdate(cut, start, end)} onRestore={() => onRestore(cut)}/>)}
