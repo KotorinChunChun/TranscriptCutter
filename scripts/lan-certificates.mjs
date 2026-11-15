@@ -12,7 +12,7 @@ export function currentLanAddresses(){return [...new Set(Object.values(networkIn
 export function ipStatus(config,addresses=currentLanAddresses()){
  let previous='';try{previous=new URL(config.publicUrl).hostname;}catch{}
  const changed=config.mode==='lan'&&!!previous&&!addresses.includes(previous);
- return {addresses,changed,previous,suggested:changed&&addresses.length===1?new URL(config.publicUrl).href.replace(previous,addresses[0]):'',message:changed?`公開URLのIP ${previous} は現在このPCにありません。現在のIPで証明書を申請し直し、管理者による再発行後に公開URLを変更してください。`:''};
+ return {addresses,changed,previous,suggested:changed&&addresses.length===1?new URL(config.publicUrl).href.replace(previous,addresses[0]):'',message:changed?`保存済み公開URLのIP ${previous} は現在このPCにありません。現在のIPで証明書を申請し直し、管理者による再発行後に公開URLを変更してください。`:''};
 }
 export async function requireAllocatedPort(port,registryPath){
  if(!Number.isInteger(port)||port<1024||port>65535)throw Error('ポートは1024～65535で指定してください。');
