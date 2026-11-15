@@ -30,15 +30,20 @@ RestartApplications=no
 DisableProgramGroupPage=yes
 SetupLogging=yes
 MinVersion=10.0
+InfoAfterFile=client-connection.txt
 
 [Languages]
 Name: "japanese"; MessagesFile: "compiler:Languages\Japanese.isl"
 
 [Files]
 Source: "{#SourceDir}\TranscriptCutter.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "client-connection.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\TranscriptCutter"; Filename: "{app}\TranscriptCutter.exe"; WorkingDir: "{app}"
+Name: "{group}\TranscriptCutter サーバーを起動"; Filename: "{app}\TranscriptCutter.exe"; Parameters: "--server"; WorkingDir: "{app}"
+Name: "{userdesktop}\TranscriptCutter サーバーを起動"; Filename: "{app}\TranscriptCutter.exe"; Parameters: "--server"; WorkingDir: "{app}"
+Name: "{group}\クライアントからの接続方法"; Filename: "{app}\client-connection.txt"
 
 ; No Run/InstallDelete/UninstallDelete entries: programs are installed only.
 ; Recognition data remains outside {app}, under the launcher's dedicated state directory.

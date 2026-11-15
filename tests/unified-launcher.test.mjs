@@ -23,7 +23,10 @@ test('first launch needs explicit local choice; saved choice starts automaticall
  try{server=await startUnified(options);const base=`http://127.0.0.1:${server.address().port}/`;assert.equal(started,0);assert.match(await(await fetch(base)).text(),/他PCにも公開/);const state=await(await fetch(base+'setup/state')).json();
   assert.equal((await fetch(base+'setup/config',{method:'POST',headers:{'Content-Type':'application/json'},body:'{"mode":"local"}'})).status,403);
   const response=await fetch(base+'setup/config',{method:'POST',headers:{Origin:base.slice(0,-1),'Content-Type':'application/json','X-TC-Setup':state.nonce},body:'{"mode":"local"}'});assert.equal(response.status,200);const result=await response.json();assert.equal(await(await fetch(result.appUrl)).text(),'app');assert.equal(JSON.parse(await readFile(join(root,'mode.json'),'utf8')).mode,'local');
-  await stop(server);server=await startUnified(options);assert.equal(started,2);
+  await stop(server);const opened=[];server=await startUnified({...options,args:['--server'],openBrowser:async url=>opened.push(url)});assert.equal(started,2);
+  const guide=`http://127.0.0.1:${server.address().port}/`;assert.deepEqual(opened,[guide]);
+  assert.match(await(await fetch(guide)).text(),/クライアントPC/);
+  await startUnified({...options,args:['--server'],openBrowser:async url=>opened.push(url)});assert.deepEqual(opened,[guide,guide]);assert.equal(started,2);
  }finally{if(server?.listening)await stop(server);await rm(root,{recursive:true});}
 });
 test('same-origin management proxy preserves operation tokens and blocks bundled update/shutdown',async()=>{

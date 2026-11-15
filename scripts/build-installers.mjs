@@ -13,7 +13,7 @@ await copyFile(source,join(directory,'TranscriptCutter.exe'));
 const script=join(root,'packaging','TranscriptCutter.iss'),scriptBytes=await readFile(script);
 execFileSync(compiler,[`/DVersion=${version}`,`/DSourceDir=${directory}`,`/DOutputDir=${output}`,script],{stdio:'inherit',windowsHide:true});
 const file=join(output,installerName(version)),installerBytes=await readFile(file);
-const record={schemaVersion:1,version,distribution:'unified-user-installer',file,bytes:installerBytes.length,sha256:sha256(installerBytes),executable:{file:'TranscriptCutter.exe',sha256:receipt.sha256,bytes:bytes.length,gitCommit:receipt.gitCommit},server:receipt.server,compiler:{file:compiler,sha256:sha256(await readFile(compiler))},installerScriptSha256:sha256(scriptBytes),installScope:'current-user',autoRun:false,dataPreserved:true,createdAt:new Date().toISOString()};
+const record={schemaVersion:1,version,distribution:'unified-user-installer',file,bytes:installerBytes.length,sha256:sha256(installerBytes),executable:{file:'TranscriptCutter.exe',sha256:receipt.sha256,bytes:bytes.length,gitCommit:receipt.gitCommit},server:receipt.server,compiler:{file:compiler,sha256:sha256(await readFile(compiler))},installerScriptSha256:sha256(scriptBytes),connectionGuideSha256:sha256(await readFile(join(root,'packaging','client-connection.txt'))),installScope:'current-user',autoRun:false,dataPreserved:true,createdAt:new Date().toISOString()};
 await writeFile(file+'.json',JSON.stringify(record,null,2)+'\n');
 await writeFile(join(root,'runtime','unified-build','installer-path.json'),JSON.stringify({file,sha256:record.sha256})+'\n');
 console.log(JSON.stringify(record,null,2));

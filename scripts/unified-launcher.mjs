@@ -26,7 +26,7 @@ export async function launchNetwork(config,registryPath){
 const closeServer=async server=>{if(!server)return;if(server.listening){server.closeAllConnections();await new Promise(r=>server.close(r));}await server.cleanup?.();};
 export async function startUnified({payload,assets,version,args=process.argv.slice(2),env=process.env,openBrowser=defaultOpen,registryPath='C:/develop/DevServer/local/servers.json',startService=startStandalone,supervisorArgs}){
  if(args.includes('--version')){console.log(`TranscriptCutter v${version} / TranscriptionServer v${payload.serverVersion}`);return null;}
- if(args.some(x=>!['--no-open','--setup'].includes(x)))throw Error('使用できる引数: --no-open / --setup / --version');
+ if(args.some(x=>!['--no-open','--setup','--server'].includes(x)))throw Error('使用できる引数: --no-open / --setup / --server / --version');
  const stateDir=env.TC_UNIFIED_STATE_DIR||(env.LOCALAPPDATA?join(env.LOCALAPPDATA,'TranscriptCutter','unified'):null);
  if(!stateDir)throw Error('保存先を取得できません。');
  await mkdir(stateDir,{recursive:true});
@@ -74,7 +74,7 @@ export async function startUnified({payload,assets,version,args=process.argv.sli
   await writeFile(join(stateDir,'launcher','launcher.json'),JSON.stringify({webPort:bootstrap.address().port,launcherId:claim.identity.nonce})+'\n');
   if(saved&&!args.includes('--setup')){try{await start(config);}catch(error){console.error('保存した利用方式で起動できません。設定画面から確認してください。');}}
   console.log(`TranscriptCutter 設定: ${setupUrl}`);
-  if(!args.includes('--no-open'))await openBrowser(appUrl||setupUrl);
+  if(!args.includes('--no-open'))await openBrowser(args.includes('--server')?setupUrl:appUrl||setupUrl);
   let cleanup;bootstrap.cleanup=()=>cleanup??=(async()=>{await closeServer(app);await claim.release();})();bootstrap.once('close',()=>{void bootstrap.cleanup();});
   return bootstrap;
  }catch(error){await closeServer(app);await closeServer(bootstrap);await claim.release();throw error;}
