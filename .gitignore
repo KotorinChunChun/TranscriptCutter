@@ -8,4 +8,6 @@
 /dist-web/
 /dev/benchmarks/
 /dev/data/
+/dev/handoff/database-exports/
+/dev/handoff/cleanup-plan.json
 /dev/第2回AI勉強会-20261109.mp4
