@@ -1,3 +1,4 @@
+import {readGapSplits,type GapSplit} from './scene-boundaries';
 import {readReviewMarks,type ReviewMarks} from "./review-marks";
 import type { Cue } from "./vtt";
 import {normalizeMutes,type MuteRange} from './audio-mute';
@@ -21,6 +22,7 @@ export interface CutRecord {
   text?: string; sourceCueIds: string[]; tokenIds?: string[]; lineIds?: string[]; spans?: TextSpan[];
 }
 export interface EditorState extends ReviewMarks {
+  gapSplits?:GapSplit[];
   mutes?: MuteRange[];
   keepTail?: boolean;
   cuts: CutRecord[]; aliases: Record<string, string>; speakerOverrides: Record<string, string | null>; forcedJoins: string[];
@@ -1004,7 +1006,7 @@ export function importProjectJson(raw: string): { doc: EditorDocument; state: Ed
   const doc = buildDocument(cues, { fillerTerms: strings(value.fillerTerms) ? value.fillerTerms : DEFAULT_FILLERS });
   const rawState = value.state;
   if (!Array.isArray(rawState.cuts) || rawState.cuts.length > 200000 || !strings(rawState.forcedJoins)) throw new Error("編集履歴の形式が正しくありません。");
-  let state = {...createEditorState(),...readReviewMarks(rawState as ReviewMarks)};
+  let state:EditorState = {...createEditorState(),...readReviewMarks(rawState as ReviewMarks),gapSplits:readGapSplits(rawState.gapSplits)};
   if(rawState.mutes!==undefined){if(!Array.isArray(rawState.mutes))throw Error('ミュート区間の形式が正しくありません。');state.mutes=normalizeMutes(rawState.mutes as MuteRange[]);}
   if(rawState.keepTail!==undefined){if(typeof rawState.keepTail!=="boolean")throw new Error("末尾設定が正しくありません。");state.keepTail=rawState.keepTail;}
   state.aliases = safeDictionary(rawState.aliases) as Record<string, string>;
