@@ -23,6 +23,7 @@ if($Mode -eq 'Build'){
   $source=Safe-ProjectPath $row.path;$row.bytes=(Get-Item -LiteralPath $source).Length;$row.sha256=Hash $source
   $target=Join-Path $projectStage $row.path;New-Item -ItemType Directory -Force (Split-Path $target -Parent) | Out-Null;Copy-Item -LiteralPath $source -Destination $target
  }
+ $kept=@($plan.records | Where-Object action -eq 'keep');$plan.keepFiles=$kept.Count;$plan.keepBytes=($kept | Measure-Object bytes -Sum).Sum
  $plan | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $planPath -Encoding utf8
  Copy-Item -LiteralPath $planPath -Destination (Join-Path $projectStage 'dev/handoff/cleanup-plan.json')
  $bundle=Join-Path $stage 'TranscriptCutter.git.bundle';git -c "safe.directory=$repo" -C $repo bundle create $bundle --all
@@ -54,12 +55,12 @@ foreach($row in $plan.records | Where-Object action -ne 'keep'){[void](Safe-Proj
 foreach($rel in $plan.wholeDirectories){$target=Safe-ProjectPath $rel;if(Test-Path -LiteralPath $target){$links=@(Get-ChildItem -LiteralPath $target -Recurse -Force -Attributes ReparsePoint);foreach($link in $links){$lr=[IO.Path]::GetRelativePath($repo,$link.FullName).Replace('\','/');if(!($plan.records | Where-Object { $_.action -eq 'remove-link' -and $_.path -eq $lr })){throw '未計画のリンクがあります。'}}}}
 foreach($rel in @('runtime/server115-client-candidate','runtime/unified-source-ece5d0b')){$path=Safe-ProjectPath $rel;if(Test-Path -LiteralPath $path){$dirty=git -c "safe.directory=$path" -C $path status --porcelain --untracked-files=all;if($LASTEXITCODE -ne 0 -or $dirty){throw 'worktreeに未保存の変更があります。'}}}
 foreach($row in $plan.records | Where-Object action -eq 'remove-link'){$path=Safe-ProjectPath $row.path;if(Test-Path -LiteralPath $path){[IO.Directory]::Delete($path)}}
-foreach($rel in @('runtime/server115-client-candidate','runtime/unified-source-ece5d0b')){$path=Safe-ProjectPath $rel;if(Test-Path -LiteralPath $path){git -c "safe.directory=$repo" -C $repo worktree remove --force $path;if($LASTEXITCODE -ne 0){throw 'worktreeの削除に失敗しました。'}}}
+foreach($rel in @('runtime/server115-client-candidate','runtime/unified-source-ece5d0b')){$path=Safe-ProjectPath $rel;if(Test-Path -LiteralPath $path){git -c "safe.directory=$repo" -c core.longpaths=true -C $repo worktree remove --force $path;if($LASTEXITCODE -ne 0){throw 'worktreeの削除に失敗しました。'}}}
 foreach($rel in $plan.wholeDirectories){$path=Safe-ProjectPath $rel;if(Test-Path -LiteralPath $path){Remove-Item -LiteralPath $path -Recurse -Force}}
 foreach($row in $plan.records | Where-Object action -eq 'remove'){$path=Safe-ProjectPath $row.path;if(Test-Path -LiteralPath $path){Remove-Item -LiteralPath $path -Force}}
 foreach($row in $plan.records | Where-Object action -eq 'keep'){if((Hash (Safe-ProjectPath $row.path)) -ne $row.sha256){throw "削除後の保持不一致: $($row.path)"}}
 $remaining=@($plan.records | Where-Object { $_.action -ne 'keep' -and (Test-Path -LiteralPath (Safe-ProjectPath $_.path)) });if($remaining.Count){throw '削除対象が残っています。'}
-$report=[ordered]@{completed=$true;removedFiles=$plan.removeFiles;removedBytes=$plan.removeBytes;retainedFiles=@($plan.records | Where-Object action -eq 'keep').Count;allRetainedHashesUnchanged=$true;plannedRemovalRemaining=0;gitHistoryPreserved=$true;archiveSha256=$check.archiveSha256;completedAt=(Get-Date).ToUniversalTime().ToString('o')}
+$report=[ordered]@{completed=$true;removedFiles=$plan.removeFiles;removedBytes=$plan.removeBytes;retainedFiles=@($plan.records | Where-Object action -eq 'keep').Count;allRetainedHashesUnchanged=$true;plannedRemovalRemaining=0;gitHistoryPreserved=$true;preDeletionArchiveSha256=$check.archiveSha256;completedAt=(Get-Date).ToUniversalTime().ToString('o')}
 $report | ConvertTo-Json -Depth 3 | Set-Content (Join-Path $repo 'dev/handoff/cleanup-result.json') -Encoding utf8
 Copy-Item -LiteralPath (Join-Path $repo 'dev/handoff/cleanup-result.json') -Destination (Join-Path $OutputRoot 'cleanup-result.json')
 $report | ConvertTo-Json -Depth 3
