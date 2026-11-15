@@ -3,13 +3,15 @@ export type Job={id:string;status:string;error?:string;message?:string;progress?
 import {supportedModel} from './recognition-options';
 import {usableModel} from './server-readiness';
 export type Model={id:string;x_meeting:{engineId:string;engineLabel:string;label:string;modelId:string;task?:string;integratedDiarization?:boolean;diarization?:boolean;diarizationModel?:string;diarizationLabel?:string;processingMethods:{id:string;label:string}[];defaultProcessingMethod?:string;availability?:string;managementState?:string;runtimeStatus?:string;supported?:boolean;installable?:boolean;runtimeInstallable?:boolean;runtimeReady?:boolean;modelInstalled?:boolean|null;available?:boolean;supportStatus?:string;modelInfo?:unknown}};
-export class SpeechError extends Error {code:string;status:number;constructor(message:string,code:string,status:number){super(message);this.name='SpeechError';this.code=code;this.status=status;}toString(){return this.message;}}
+export function retryAfterSeconds(value:string|null,now=Date.now()):number|null{if(!value)return null;const text=value.trim();if(/^\d+$/.test(text)){const n=Number(text);return Number.isSafeInteger(n)?n:null;}if(!/^[A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(text))return null;const date=Date.parse(text);return Number.isFinite(date)?Math.max(0,Math.ceil((date-now)/1000)):null;}
+export class SpeechError extends Error {code:string;status:number;retryAfterSeconds:number|null;constructor(message:string,code:string,status:number,retryAfter:string|null=null){super(message);this.name='SpeechError';this.code=code;this.status=status;this.retryAfterSeconds=retryAfterSeconds(retryAfter);}toString(){return this.message+(this.retryAfterSeconds===null?'':`（再試行の目安：約${this.retryAfterSeconds}秒後）`);}}
+export function resultGeneration(value:unknown):number|undefined{if(value===undefined)return undefined;if(!Number.isSafeInteger(value)||Number(value)<0)throw Error('字幕の結果世代が正しくありません。');return value as number;}
 export const needsBearerKey=(error:unknown)=>error instanceof SpeechError&&['bearer_key_required','bearer_key_invalid'].includes(error.code);
 export function canConfigureConnection(busy:boolean,current:string,next:string){if(!busy)return true;try{return new URL(current).href===new URL(next).href;}catch{return false;}}
 export class SpeechClient {
  private clientId:string;
  constructor(clientId:string=crypto.randomUUID()){this.clientId=clientId;}
- private async decode(response:Response){const value=await response.json();if(!response.ok)throw new SpeechError(value.error?.message??value.error??value.detail??`サーバー応答 ${response.status}`,value.code??'',response.status);return value;}
+ private async decode(response:Response){const value=await response.json();if(!response.ok)throw new SpeechError(value.error?.message??value.error??value.detail??`サーバー応答 ${response.status}`,value.code??'',response.status,response.headers.get('Retry-After'));return value;}
  private headers():Record<string,string>{return {'X-TC-Client':this.clientId};}
  async connectionSettings(){return this.decode(await fetch('/connection',{headers:this.headers()}));}
  async configure(url:string,key:string){return this.decode(await fetch('/connection',{method:'POST',headers:{...this.headers(),'Content-Type':'application/json'},body:JSON.stringify({url,key})}));}
@@ -17,9 +19,26 @@ export class SpeechClient {
  async editSegments(id:string,edits:unknown){return this.request(`/api/jobs/${encodeURIComponent(id)}/segments`,{edits},'PATCH');}
  async deleteJob(id:string){if(!/^[a-f0-9]{32}$/i.test(id))throw Error('履歴IDを確認してください。');const result=await this.request(`/api/jobs/${id}/delete`,{confirm:'delete-job',clientId:'transcript-cutter'});if(result.deleted!==true||(result.id??result.jobId??id)!==id)throw Error('削除結果を確認できません。履歴を更新してください。');return result;}
  async connect(onHealth?:(health:any)=>void){const health=await this.request('/api/health');if(health.appId!=='meeting-transcriber'||health.protocolVersion!==3)throw Error('対応する文字起こしサーバーではありません。');onHealth?.(health);const models=await this.request('/v1/models');if(!Array.isArray(models.data))throw Error('モデル一覧を確認できません。');return {health,models:(models.data as Model[]).filter(supportedModel).filter(usableModel)};}
- async segments(id:string,after=0,knownCount=0):Promise<Segment[]>{const rows:Segment[]=[];let total:number|undefined;for(let page=0;page<10000;page++){const v=await this.request(`/api/jobs/${encodeURIComponent(id)}/segments?after=${after}&limit=1000`);const batch=v.segments as Segment[];if(!Array.isArray(batch)||!Number.isSafeInteger(v.total)||v.total<0)throw Error('字幕の応答形式を確認してください。');total??=v.total;rows.push(...batch);if(!batch.length||knownCount+rows.length>=total!)return rows;const next=Number(v.next??batch.at(-1)!.id);if(!Number.isSafeInteger(next)||next<=after)throw Error('字幕の取得が進みません。');after=next;}throw Error('字幕の取得上限を超えました。');}
+ async segments(id:string,after=0,knownCount=0):Promise<Segment[]>{return (await this.segmentSnapshot(id,after,knownCount)).segments;}
+ async segmentSnapshot(id:string,after=0,knownCount=0,expectedGeneration?:number):Promise<{segments:Segment[];resultGeneration?:number}>{
+  let rows:Segment[]=[],total:number|undefined,generation=expectedGeneration,resets=0;
+  for(let page=0;page<10000;page++){
+   const v=await this.request(`/api/jobs/${encodeURIComponent(id)}/segments?after=${after}&limit=1000`),current=resultGeneration(v.resultGeneration),batch=v.segments as Segment[];
+   if(!Array.isArray(batch)||!Number.isSafeInteger(v.total)||v.total<0)throw Error('字幕の応答形式を確認してください。');
+   if(generation!==current){
+    if(generation!==undefined&&current===undefined)throw Error('字幕の結果世代を確認できません。');
+    if(++resets>3)throw Error('字幕が再生成中です。次の更新で再確認します。');
+    generation=current;rows=[];total=undefined;knownCount=0;
+    if(after!==0){after=0;continue;}
+   }
+   total??=v.total;rows.push(...batch);
+   if(!batch.length||knownCount+rows.length>=total!)return {segments:rows,resultGeneration:generation};
+   const next=Number(v.next??batch.at(-1)!.id);if(!Number.isSafeInteger(next)||next<=after)throw Error('字幕の取得が進みません。');after=next;
+  }
+  throw Error('字幕の取得上限を超えました。');
+ }
  async upload(file:File,model:Model,device:string,diarize:boolean,start:number,end:number|undefined,onProgress:(value:number)=>void):Promise<{job:Job}>{
   const query=new URLSearchParams({name:file.name,engine:model.x_meeting.engineId,model:model.x_meeting.modelId,device,diarize:String(diarize),clientId:'transcript-cutter',workload:'file',start:String(start),...(end===undefined?{}:{end:String(end)})});
-  return new Promise((resolve,reject)=>{const request=new XMLHttpRequest();request.open('POST','/speech/api/jobs?'+query);request.timeout=2*60*60*1000;request.setRequestHeader('Content-Type','application/octet-stream');request.setRequestHeader('X-TC-Client',this.clientId);request.upload.onprogress=e=>{if(e.lengthComputable)onProgress(e.loaded/e.total);};request.onload=()=>{try{const data=JSON.parse(request.responseText);if(request.status<200||request.status>=300)throw new SpeechError(data.error?.message??data.error??data.detail??`送信エラー ${request.status}`,data.code??'',request.status);resolve(data);}catch(e){reject(e);}};const uncertain=()=>reject(Error('送信の受付結果が不明です。自動再送はしません。「履歴を更新」で確認してください。'));request.onerror=uncertain;request.ontimeout=uncertain;request.send(file);});
+  return new Promise((resolve,reject)=>{const request=new XMLHttpRequest();request.open('POST','/speech/api/jobs?'+query);request.timeout=2*60*60*1000;request.setRequestHeader('Content-Type','application/octet-stream');request.setRequestHeader('X-TC-Client',this.clientId);request.upload.onprogress=e=>{if(e.lengthComputable)onProgress(e.loaded/e.total);};request.onload=()=>{try{const data=JSON.parse(request.responseText);if(request.status<200||request.status>=300)throw new SpeechError(String(data.error?.message??data.error??data.detail??`送信エラー ${request.status}`)+(request.status===503?' ファイルは自動再送していません。':''),data.code??'',request.status,request.getResponseHeader?.('Retry-After')??null);resolve(data);}catch(e){reject(e);}};const uncertain=()=>reject(Error('送信の受付結果が不明です。自動再送はしません。「履歴を更新」で確認してください。'));request.onerror=uncertain;request.ontimeout=uncertain;request.send(file);});
  }
 }
