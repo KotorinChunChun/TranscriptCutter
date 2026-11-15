@@ -42,13 +42,24 @@ export function attachWordTimings<T extends Cue>(cues:readonly T[],segments:read
   const words:WordSegment['words']=[];
   for(let i=lo;i<sorted.length&&sorted[i].start*1000<cue.end;i++)if(sorted[i].end*1000>cue.start)words.push(...sorted[i].words);
   if(words.length>10000)return cue;
-  const joined=words.map(w=>w.word).join(''),counts=new Map<string,number>();
-  words.forEach(w=>{const text=w.word.trim();counts.set(text,(counts.get(text)??0)+1);});
+  const joined=words.map(w=>w.word).join('');
   let offset=0;
   const candidates=words.flatMap(w=>{
    const text=w.word.trim(),at=offset+w.word.length-w.word.trimStart().length;offset+=w.word.length;
-   const from=cue.text.indexOf(text),start=Math.round(w.start*1000),end=Math.round(w.end*1000);
-   if(!text||counts.get(text)!==1||from<0||cue.text.indexOf(text,from+1)>=0||start<cue.start||end>cue.end||end<=start)return [];
+   const start=Math.round(w.start*1000),end=Math.round(w.end*1000);
+   if(!text||start<cue.start||end>cue.end||end<=start)return [];
+   // A repeated word is safe only when its surrounding text occurs once in both
+   // transcripts. Never choose the first occurrence merely by its position.
+   const matches:number[]=[];
+   for(let pos=cue.text.indexOf(text);pos>=0;pos=cue.text.indexOf(text,pos+1)){
+    let l=0,r=0;
+    while(l<24&&pos>l&&at>l&&cue.text[pos-l-1]===joined[at-l-1])l++;
+    while(r<24&&pos+text.length+r<cue.text.length&&at+text.length+r<joined.length&&cue.text[pos+text.length+r]===joined[at+text.length+r])r++;
+    const context=joined.slice(at-l,at+text.length+r),first=joined.indexOf(context);
+    if(text.length+l+r>=3&&first===at-l&&joined.indexOf(context,first+1)<0&&cue.text.indexOf(context)===pos-l&&cue.text.indexOf(context,pos-l+1)<0)matches.push(pos);
+   }
+   if(matches.length!==1)return [];
+   const from=matches[0];
    let left=0,right=0;
    while(left<24&&from>left&&at>left&&cue.text[from-left-1]===joined[at-left-1])left++;
    while(right<24&&from+text.length+right<cue.text.length&&at+text.length+right<joined.length&&cue.text[from+text.length+right]===joined[at+text.length+right])right++;
