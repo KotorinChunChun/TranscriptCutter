@@ -1,3 +1,4 @@
+import {readReviewMarks,type ReviewMarks} from './review-marks';
 import {validatedWordTiming} from './word-timing';
 import { buildDocument, getSpeakerParts } from "./editor";
 import { parseVtt, formatTime, type Cue } from "./vtt";
@@ -15,6 +16,7 @@ export interface ComparisonSource {
 export type SpeakerChoice = { sourceId: string; label: string | null } | { custom: string } | null;
 export interface ComparisonChoice { textSourceId: string | null; speaker: SpeakerChoice; outputSourceId?: string }
 export interface ComparisonSession {
+  reviewMarks?:ReviewMarks;
   schemaVersion: 1;
   kind: "vtt-dialogue-comparison";
   sources: ComparisonSource[];
@@ -462,7 +464,7 @@ function normalizeSpeaker(value: unknown, sourceSpeakers: Map<string, Set<string
 }
 function validateSession(value: unknown): ComparisonSession {
   if (!record(value)) throw new Error("比較プロジェクトの形式が正しくありません。");
-  keys(value, ["schemaVersion", "kind", "sources", "referenceId", "choices", "speakerAliases"], "比較プロジェクト");
+  keys(value, ["schemaVersion", "kind", "sources", "referenceId", "choices", "speakerAliases", "reviewMarks"], "比較プロジェクト");
   if (value.schemaVersion !== 1 || value.kind !== "vtt-dialogue-comparison") throw new Error("対応する字幕比較プロジェクトではありません。");
   const sources = normalizeSources(value.sources);
   if (typeof value.referenceId !== "string" || !sources.some(source => source.id === value.referenceId)) throw new Error("比較の基準モデルが見つかりません。");
@@ -490,6 +492,7 @@ function validateSession(value: unknown): ComparisonSession {
     if(output!==undefined&&(typeof output!=="string"||textSourceId===null||!sources.some(source=>source.id===output&&source.editable)||!row.candidates[output]?.some(cue=>cue.text.trim())))throw Error("採用する編集列が正しくありません。");
     session.choices[id] = { textSourceId: textSourceId as string | null, speaker: normalizeSpeaker(rawChoice.speaker, sourceSpeakers),...(typeof output==='string'?{outputSourceId:output}:{}) };
   }
+  if(value.reviewMarks!==undefined){if(!record(value.reviewMarks))throw Error("確認記録の形式が正しくありません。");session.reviewMarks=readReviewMarks(value.reviewMarks);}
   return session;
 }
 export function exportComparisonJson(session: ComparisonSession): string {

@@ -25,6 +25,7 @@ export interface TranscriptRowContext {
   interactionMode: TranscriptInteractionMode;
   playbackMode: PlaybackMode;
   playbackPlaying: boolean;
+  bookmarks?:readonly {start:number;end:number;name:string}[];
   hasMedia: boolean;
   busy: boolean;
   selectedLines: Set<string>;
@@ -86,7 +87,7 @@ export function TranscriptGroupRow({ ctx, group, groupIndex, palette, playing, t
                 <input type="checkbox" checked={selected} disabled={lineRemoved} aria-label={`${formatTime(line.start, true)}の行を選択`} onChange={e => ctx.onSelectLine(line.id, e.target.checked)}/>
               </label>
               {showTimes && <button className="line-time" {...ctx.middleSeek(line.start)} onClick={() => ctx.onSeek(line.start)} title={`${formatTime(line.start, true)}–${formatTime(line.end, true)} / ${PRECISION_LABEL[line.precision]}`}>
-                {comparisonDisplayTime(line.start)}<span className="line-time-end">{comparisonDisplayTime(line.end)}</span>
+                {ctx.bookmarks?.some(b=>b.start>=line.start&&b.start<line.end)&&<span title={ctx.bookmarks.filter(b=>b.start>=line.start&&b.start<line.end).map(b=>b.name).join(" / ")} aria-label="ブックマークあり">★ </span>}{comparisonDisplayTime(line.start)}<span className="line-time-end">{comparisonDisplayTime(line.end)}</span>
               </button>}
               <div className="line-content message-text">
                 {!ctx.mounted ? line.text : line.tokens.map(token => <TranscriptToken key={token.id} token={token} spans={ctx.deletedSpans.get(token.cueId) ?? NO_SPANS} showDeleted={revealDeleted} active={ctx.activeTokenIds.has(token.id)} playbackMode={ctx.playbackMode} interactionMode={ctx.interactionMode} canPlay={ctx.hasMedia && !ctx.busy} onSeek={ctx.onSeek} query={ctx.query} shouldIgnoreClick={ctx.shouldIgnoreClick} onRestore={ctx.onRestoreText} onDelete={ctx.onDeleteToken}/>)}

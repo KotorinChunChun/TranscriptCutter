@@ -23,6 +23,8 @@ import { getSpeakerParts } from "@/src/lib/editor";
 import {buildTimedItemIndex,findActiveTimedItems} from "@/src/lib/transcript-playback";
 
 interface VttComparisonProps {
+  onReview?:()=>void;
+  reviewFocus?:{rowId:string;nonce:number};
   session: ComparisonSession | null;
   active: boolean;
   onSample: () => void;
@@ -213,7 +215,7 @@ function Candidate({ session, row, source, choice, onChoice, canPlay, onSeek, bu
   </div>;
 }
 
-export function VttComparison({ session, active, onSample, canSample, onChange, onAddFiles, onGenerate, onApply, onExportVtt, onSeek, canPlay, currentMs, durationMs, playing, onTogglePlayback, onScrub, busy }: VttComparisonProps) {
+export function VttComparison({ onReview,reviewFocus,session, active, onSample, canSample, onChange, onAddFiles, onGenerate, onApply, onExportVtt, onSeek, canPlay, currentMs, durationMs, playing, onTogglePlayback, onScrub, busy }: VttComparisonProps) {
   const [query, setQuery] = useState("");
   const [speakerRow,setSpeakerRow]=useState<string|null>(null);
   const [simple,setSimple]=useState(()=>{try{return localStorage.getItem('tc-comparison-view')!=='detail';}catch{return true;}});
@@ -239,6 +241,14 @@ export function VttComparison({ session, active, onSample, canSample, onChange, 
   const sourceIdentity = JSON.stringify(sources?.map(source => source.id) || []);
   const displayKey = JSON.stringify([query, differencesOnly, sourceIdentity, referenceId]);
   const visibleCount = display.key === displayKey ? display.count : PAGE_SIZE;
+  useEffect(()=>{if(reviewFocus){setQuery('');setDifferencesOnly(false);setCollapsed(new Set());}},[reviewFocus]);
+  useEffect(()=>{
+    if(!reviewFocus||query||differencesOnly)return;
+    const index=rows.findIndex(r=>r.id===reviewFocus.rowId);if(index<0)return;
+    if(visibleCount<=index){setDisplay({key:displayKey,count:index+PAGE_SIZE});return;}
+    const timer=requestAnimationFrame(()=>{const node=timelineScrollRef.current?.querySelector<HTMLElement>('[data-comparison-row="'+CSS.escape(reviewFocus.rowId)+'"]');node?.scrollIntoView({block:'center'});});
+    return()=>cancelAnimationFrame(timer);
+  },[reviewFocus,query,differencesOnly,rows,visibleCount,displayKey]);
   const sourceSpeakers = useMemo(() => aliasesOpen && sources ? Object.fromEntries(sources.map(source => [source.id, getComparisonSpeakers(source)])) : {}, [sources, aliasesOpen]);
   const filteredRows = useMemo(() => {
     if (!sources) return [];
@@ -358,7 +368,7 @@ export function VttComparison({ session, active, onSample, canSample, onChange, 
   ]}/>;
   const header=<div className="comparison-workspace-heading">
     {canPlay?transport:<span className="comparison-media-drop-hint" title="ここに動画（MP4・WebM）をドロップして読込">ここに動画（MP4・WebM）をドロップして読込</span>}
-    <div className="comparison-primary-actions"><SaveMenu stage={2} active={active} className="button primary small"/><button type="button" className="button primary small" disabled={busy||!summary?.cueCount} onClick={onApply}>カット編集へ進む<ArrowRight size={14}/></button></div>
+    <div className="comparison-primary-actions">{session&&<button className="button secondary" onClick={onReview}>要確認・ブックマーク</button>}<SaveMenu stage={2} active={active} className="button primary small"/><button type="button" className="button primary small" disabled={busy||!summary?.cueCount} onClick={onApply}>カット編集へ進む<ArrowRight size={14}/></button></div>
   </div>;
   if (!session || !sources?.length || !summary) return <section className="vtt-comparison comparison-empty-workspace" aria-label="字幕比較">
     {header}<div className="comparison-drop-content"><span>字幕(vtt)・動画（MP4・WebM）・プロジェクトをドロップ</span><div className="comparison-empty-actions">{canSample&&<button className="button secondary" disabled={busy} onClick={onSample}>サンプル</button>}{addition}</div></div>

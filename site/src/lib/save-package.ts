@@ -1,3 +1,5 @@
+import {bookmarksAfterCuts} from './review-marks';
+import {getEffectiveCuts,normalizeCuts} from './editor';
 import {buildDocument,buildEditedCues,createEditorState,exportProjectJson,exportCutJson,exportCutCsv,type EditorDocument,type EditorState,type GroupOptions} from './editor';
 import {serializeVtt,parseVtt} from './vtt';
 import {exportComparisonJson,getSelectedCues,type ComparisonSession} from './comparison';
@@ -14,7 +16,7 @@ export function videoSaveFiles(input:{doc:EditorDocument;state:EditorState;sourc
  const cues=buildEditedCues(doc,state,{...input.merge,timeline:'edited'}).filter(cue=>cue.start<media.durationMs).map(cue=>({...cue,end:Math.min(cue.end,media.durationMs)})).filter(cue=>cue.start<cue.end);
  const vtt=serializeVtt(cues,{speakerFormat:'voice'});
  // Resume against the exported media with its new timeline and no cuts to reapply.
- const resume=exportProjectJson(buildDocument(parseVtt(vtt).cues),createEditorState(),{sourceFile:media.fileName,mediaDurationMs:media.durationMs});
+ const resume=exportProjectJson(buildDocument(parseVtt(vtt).cues),{...createEditorState(),bookmarks:bookmarksAfterCuts(state.bookmarks??[],normalizeCuts(getEffectiveCuts(doc,state,input.sourceDurationMs),input.sourceDurationMs),input.sourceDurationMs)},{sourceFile:media.fileName,mediaDurationMs:media.durationMs});
  const files:ArchiveFile[]=[{name:media.fileName,blob:media.blob},text(base+'.vtt',vtt),text(base+'.vtt-edit.json',resume),text('元動画用_編集履歴.vtt-edit.json',JSON.stringify(original,null,2)),text('元動画用_カット記録.json',exportCutJson(doc,state,options)),text('元動画用_カット記録.csv',exportCutCsv(doc,state,options)),metricsFile(input.metrics)];
  if(input.comparison)files.push(text('元動画用_比較プロジェクト.compare.json',exportComparisonJson(input.comparison)));
  files.push(text('保存内容.json',JSON.stringify({schemaVersion:1,app:'TranscriptCutter',version:'0.1.1',outputMedia:media.fileName,outputDurationMs:media.durationMs,outputVtt:base+'.vtt',resumeProject:base+'.vtt-edit.json',originalMedia:input.sourceMedia,originalMediaIncluded:false,files:[...files.map(file=>file.name),'保存内容.json','お読みください.txt']},null,2)));
