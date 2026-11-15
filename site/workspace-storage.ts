@@ -1,4 +1,5 @@
 import {useEffect,useLayoutEffect,useState} from 'react';
+import {restorePointPrefix,pointsToKeep} from './src/lib/restore-points';
 
 type SavedRecord={key:string;version:1;data:unknown;assetId:string|null};
 type SavedAsset={id:string;blob:Blob;name:string;type:string;lastModified:number};
@@ -37,6 +38,41 @@ export function restoredWorkspace<T>(key:string):{data:T;file:File|null}|null{
  const row=records.get(key);return row?{data:row.data as T,file:row.assetId?files.get(row.assetId)??null:null}:null;
 }
 export function workspaceRestoreError(error:unknown){database?.close();database=null;fail(error);}
+
+export type RestorePoint<T>={key:string;createdAt:number;name:string;data:T;file:File|null};
+export function listRestorePoints<T>(workspace:string):RestorePoint<T>[]{
+ const prefix=restorePointPrefix(workspace);
+ return pointsToKeep([...records.values()].filter(r=>r.key.startsWith(prefix)).map(r=>{
+  const value=r.data as {createdAt:number;name:string;data:T};
+  return {key:r.key,...value,file:r.assetId?files.get(r.assetId)??null:null};
+ }));
+}
+/** Atomic bounded checkpoints sharing media assets with the live workspace. */
+export async function saveRestorePoint<T>(workspace:string,name:string,data:T,file:File|null):Promise<void>{
+ if(!database||resetting)throw Error('復元用の保存領域を利用できません。編集プロジェクトを保存してください。');
+ if(!name.trim()||name.length>120)throw Error('保存ポイント名は1～120文字で入力してください。');
+ const prefix=restorePointPrefix(workspace),key=prefix+crypto.randomUUID(),createdAt=Date.now();
+ let assetId=file?fileIds.get(file):null;
+ if(file&&!assetId){assetId=crypto.randomUUID();fileIds.set(file,assetId);}
+ const row:SavedRecord={key,version:1,data:{name:name.trim(),createdAt,data},assetId:assetId??null};
+ await new Promise<void>((resolve,reject)=>{
+  const tx=database!.transaction(['records','assets'],'readwrite'),store=tx.objectStore('records');
+  let removed:string[]=[];
+  store.put(row);
+  if(file){const exists=tx.objectStore('assets').getKey(assetId!);exists.onsuccess=()=>{if(exists.result===undefined)tx.objectStore('assets').put({id:assetId!,blob:file,name:file.name,type:file.type,lastModified:file.lastModified} satisfies SavedAsset);};}
+  const all=store.getAll();
+  all.onsuccess=()=>{
+   const rows=all.result as SavedRecord[],points=rows.filter(r=>r.key.startsWith(prefix));
+   const keep=new Set(pointsToKeep(points.map(r=>({key:r.key,createdAt:(r.data as {createdAt:number}).createdAt}))).map(r=>r.key));
+   removed=points.filter(r=>!keep.has(r.key)).map(r=>r.key);removed.forEach(k=>store.delete(k));
+   const used=new Set(rows.filter(r=>!removed.includes(r.key)).map(r=>r.assetId));
+   const cursor=tx.objectStore('assets').openCursor();cursor.onsuccess=()=>{const entry=cursor.result;if(!entry)return;if(!used.has(String(entry.key)))entry.delete();entry.continue();};
+  };
+  pending++;notify();
+  tx.oncomplete=()=>{removed.forEach(k=>records.delete(k));records.set(key,row);if(file&&assetId)files.set(assetId,file);pending--;notify();resolve();};
+  tx.onabort=()=>{pending--;const error=tx.error??Error('保存容量を確認してください。');fail(error);reject(error);};
+ });
+}
 
 /** The record and a newly attached media blob commit atomically. No base64 copies. */
 export function saveWorkspace(key:string,data:unknown,file:File|null=null){

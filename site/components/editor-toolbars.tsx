@@ -32,6 +32,7 @@ export function EditorToolbar(props: {
   onRetranscribe: () => void;
   retranscribeDisabled: boolean;
   onReview:()=>void;
+  onRestorePoints:()=>void;
   reviewCount:number;
 }) {
   const { hasTranscript } = props;
@@ -57,6 +58,7 @@ export function EditorToolbar(props: {
       </>}
       <button className="button secondary" onClick={props.onReview}>要確認・ブックマーク {props.reviewCount}</button>
       <button className="button secondary" disabled={props.retranscribeDisabled} onClick={props.onRetranscribe}>再文字起こし</button>
+      <button className="button secondary" disabled={props.addDisabled} onClick={props.onRestorePoints}>保存ポイント</button>
       <SaveMenu stage={3} active={props.active} className="button primary"/>
     </div>
   </div>;
