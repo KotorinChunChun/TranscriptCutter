@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 2,
+  "project": "TranscriptCutter",
+  "version": "0.1.1",
+  "anonymized": true,
+  "anonymizedOn": "2026-11-15",
+  "sanitizedBaseCommit": "c3f30063348b1d7efb5abb9cc9ce2a66bddb43ee",
+  "historyCommitsBeforeFinalReport": 131,
+  "gitHistoryRewritten": true,
+  "retainedLocalAttachments": 0,
+  "retainedOriginalArchives": 0,
+  "retainedPrivateEvidence": 0,
+  "upstreamSourceCommit": "55db7303d12c17e56e8d66e993de829ad4bdfb7a",
+  "upstreamOrigin": "https://github.com/i1643/TranscriptionServer",
+  "upstreamSourceAnonymized": true,
+  "included": "anonymized source, development documents, local Git history, public third-party licenses",
+  "excluded": "private evidence, screenshots, attachments, old archives, credentials, models, build outputs"
+}

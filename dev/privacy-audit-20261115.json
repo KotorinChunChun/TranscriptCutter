@@ -1,0 +1,16 @@
+{
+  "snapshotStage": "before-final-commit",
+  "filesScanned": 592,
+  "jsonFilesParsed": 15,
+  "gitObjects": {
+    "tree": 640,
+    "blob": 1164,
+    "commit": 131,
+    "tag": 1
+  },
+  "privateMatches": 0,
+  "retainedEvidenceImages": 0,
+  "historyCommitsRewritten": 131,
+  "testsPassed": 40,
+  "powerShellScriptsParsed": 12
+}
