@@ -89,7 +89,7 @@ export function createWebServer({directory=fileURLToPath(new URL('../dist-web/',
    const upstream=transport.request(new URL(path+url.search,target),{method:req.method,headers},reply=>{
     if(reply.statusCode>=300&&reply.statusCode<400){reply.resume();fail(res,new ConnectionError('サーバーが別URLを返しました。接続先を確認してください。',502,'redirect_refused'));return;}
     if(reply.statusCode===401){reply.resume();if(session.connection===connection)session.connection=null;fail(res,connection.health.authMode==='bearer'?new ConnectionError('サーバー接続キーを確認し、接続設定から再接続してください。',401,'bearer_key_invalid'):new ConnectionError('LAN/このPCの一時操作トークンが無効になりました。「再接続」で取り直してください。接続キーの入力は不要です。',401,'operation_token_expired'));return;}
-    res.writeHead(reply.statusCode??502,{'Content-Type':reply.headers['content-type']??'application/json'});reply.pipe(res);
+    res.writeHead(reply.statusCode??502,{'Content-Type':reply.headers['content-type']??'application/json',...(typeof reply.headers['retry-after']==='string'?{'Retry-After':reply.headers['retry-after']}:{})});reply.pipe(res);
    });
    upstream.on('error',error=>{if(!res.headersSent)fail(res,networkConnectionError(error));else res.destroy();});
    req.on('aborted',()=>upstream.destroy());res.on('close',()=>{if(!res.writableEnded)upstream.destroy();});req.pipe(upstream);return;

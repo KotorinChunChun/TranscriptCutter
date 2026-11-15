@@ -16,6 +16,11 @@ const fixture=(mode,received,options={})=>createServer(async(req,res)=>{
 });
 const clientHeaders=id=>({'X-TC-Client':id});
 
+test('draining POST preserves 503 and Retry-After without replay while GET and cancel remain usable',async()=>{
+ let posts=0;const upstream=createServer(async(req,res)=>{for await(const chunk of req){}res.setHeader('Content-Type','application/json');if(req.url==='/api/health'){res.end(JSON.stringify({...identity,authMode:'local',token:'fixture'}));return;}if(req.method==='POST'&&req.url==='/api/jobs'){posts++;res.writeHead(503,{'Retry-After':'5'}).end('{"error":"更新待機"}');return;}res.end('{"job":{"status":"queued"}}');});const target=await listen(upstream),web=createWebServer({speechUrl:target}),base=await listen(web);
+ try{const response=await fetch(base+'/speech/api/jobs',{method:'POST',body:'fixture'});assert.equal(response.status,503);assert.equal(response.headers.get('Retry-After'),'5');assert.equal(posts,1);assert.equal((await fetch(base+'/speech/api/jobs')).status,200);assert.equal((await fetch(base+'/speech/api/jobs/'+'a'.repeat(32)+'/cancel',{method:'POST',body:'{}'})).status,200);assert.equal(posts,1);}finally{await stop(web);await stop(upstream);}
+});
+
 test('v0.1.14 scheduling capabilities survive the proxy without private fields',async()=>{
  const upstream=fixture('local',[],{health:{serverVersion:'0.1.14',capabilities:{jobDeletion:true,concurrentInference:true,resourceBudgetScheduling:true,privatePath:'fixture-private'}}}),target=await listen(upstream),web=createWebServer({speechUrl:target}),base=await listen(web);
  try{const health=await(await fetch(base+'/speech/api/health')).json();assert.equal(health.serverVersion,'0.1.14');assert.deepEqual(health.capabilities,{jobDeletion:true,concurrentInference:true,resourceBudgetScheduling:true});assert.doesNotMatch(JSON.stringify(health),/fixture-private|fixture-operation-token/);}finally{await stop(web);await stop(upstream);}

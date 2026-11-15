@@ -3,9 +3,9 @@ import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 
 export const bundledServerRelease=Object.freeze({
- version:'0.1.14',gitCommit:'8e5d0cf3adcb965db15ae999cb87dce39eceff50',
- sha256:'19c681cd0960827d16c24a2e4c4d8c3cbb29950e68d18da7cbb67b2c44fe9ceb',
- directory:'C:/develop/Services/transcription-server/release/v0.1.14/TranscriptionServer',
+ version:'0.1.15',gitCommit:'55db7303d12c17e56e8d66e993de829ad4bdfb7a',
+ sha256:'3c9277b1cabb40a8d7cfea995b285d31c7a8848ee4687b4ea4af4d06768fc266',
+ directory:'C:/develop/Services/transcription-server/release/v0.1.15/TranscriptionServer',
 });
 export const sha256=data=>createHash('sha256').update(data).digest('hex');
 export const requiredWebAssets=Object.freeze([
