@@ -23,6 +23,16 @@ async function launch(){
 async function kill(){if(!child||child.exitCode!==null)return;await new Promise(r=>{child.once('exit',r);child.kill();});}
 try{
  let base=await launch(),stateResponse=await(await fetch(base+'setup/state')).json();assert.equal(stateResponse.appUrl,'');assert.match(await(await fetch(base)).text(),/このPCだけ/);
+ assert.equal(stateResponse.config.certPath,'');assert.equal(stateResponse.config.keyPath,'');assert.equal(stateResponse.config.rootCaPath,'');
+ const setupHtml=await(await fetch(base)).text();assert.match(setupHtml,/社内共通CAへ証明書を申請する/);assert.match(setupHtml,/HTTP案内ポート/);assert.ok(!setupHtml.includes('C:/AI/'));
+ const certificateChecks=['clean-certificate-defaults'];
+ if(stateResponse.network.addresses.length){
+  const publicUrl=`https://${stateResponse.network.addresses[0]}:19120/`,headers={Origin:base.slice(0,-1),'Content-Type':'application/json','X-TC-Setup':stateResponse.nonce};
+  const requested=await fetch(base+'setup/certificate-request',{method:'POST',headers,body:JSON.stringify({publicUrl})});assert.equal(requested.status,200,await requested.clone().text());const record=(await requested.json()).request;assert.ok(record.ips.includes(stateResponse.network.addresses[0]));assert.ok(!JSON.stringify(record).includes('PRIVATE KEY'));
+  const csr=await(await fetch(base+'setup/certificate-request.csr')).text();assert.match(csr,/BEGIN CERTIFICATE REQUEST/);assert.ok(!csr.includes('PRIVATE KEY'));
+  const invalid=await fetch(base+'setup/certificate-check',{method:'POST',headers,body:JSON.stringify({publicUrl,certPath:join(state,'missing.crt'),keyPath:record.keyPath})});assert.equal(invalid.status,400);assert.match((await invalid.json()).error,/HTTPS証明書ファイルが見つかりません/);
+  const unchanged=await(await fetch(base+'setup/state')).json();assert.deepEqual(unchanged.config,stateResponse.config);assert.equal(unchanged.appUrl,'');assert.equal((await fetch(base+'setup/root-ca.cer')).status,404);certificateChecks.push('packaged-csr-and-diagnostics');
+ }
  const response=await fetch(base+'setup/config',{method:'POST',headers:{Origin:base.slice(0,-1),'Content-Type':'application/json','X-TC-Setup':stateResponse.nonce},body:'{"mode":"local"}'});assert.equal(response.status,200,await response.clone().text());let result=await response.json(),appUrl=result.appUrl;
  const info=await(await fetch(appUrl+'launcher')).json();assert.equal(info.mode,'local');assert.equal(info.setupUrl,base);
  const health=await(await fetch(appUrl+'api/health')).json();assert.equal(health.appId,'meeting-transcriber');assert.equal(health.instanceId,'transcript-cutter');assert.equal(health.serverVersion,bundledServerRelease.version);assert.equal(health.capabilities.concurrentInference,true);assert.equal(health.capabilities.resourceBudgetScheduling,true);
@@ -38,6 +48,6 @@ try{
  for(let n=0;n<60;n++){try{await fetch(`http://127.0.0.1:${processRecord.port}/api/health`,{signal:AbortSignal.timeout(200)});}catch{break;}await pause(100);}
  await assert.rejects(fetch(`http://127.0.0.1:${processRecord.port}/api/health`,{signal:AbortSignal.timeout(300)}));
  base=await launch();stateResponse=await(await fetch(base+'setup/state')).json();assert.equal(stateResponse.config.mode,'local');assert.ok(stateResponse.appUrl);assert.equal((await fetch(stateResponse.appUrl+'api/health')).status,200);
- const report={version,sha256:receipt.sha256,source:receipt.gitCommit,passed:['single-exe-version','first-choice','owned-server-health','same-origin-management','embedded-assets','duplicate-launch','forced-exit-descendants','saved-mode-relaunch'],state,checkedAt:new Date().toISOString()};
+ const report={version,sha256:receipt.sha256,source:receipt.gitCommit,passed:['single-exe-version','first-choice','owned-server-health','same-origin-management','embedded-assets','duplicate-launch','forced-exit-descendants','saved-mode-relaunch',...certificateChecks],state,checkedAt:new Date().toISOString()};
  await writeFile(join(state,'acceptance.json'),JSON.stringify(report,null,2)+'\n');await writeFile(exe+'.acceptance.json',JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify(report,null,2));
 }finally{await kill();}
