@@ -22,7 +22,7 @@ import {recognitionProgress,transcriptionName} from './recognition-state';
 import {segmentsToVtt} from './segments-vtt';
 import type {Job,Segment} from './speech-client';
 import type {RecognitionProps} from './recognition';
-export function BrowserRecognition({active,onTransfer,onActivity,sourceControls}:RecognitionProps){
+export function BrowserRecognition({active,onTransfer,onActivity,sourceControls,incomingMedia}:RecognitionProps){
  const [restored]=useState(()=>restoredWorkspace<{range:RangeSelection;job:Job|null;segments:Segment[]}>('browser-recognition'));
  const engine=useRef(new BrowserWhisper()).current,haasEngine=useRef(new BrowserHaas()).current,controller=useRef<AbortController|null>(null),player=useRef<HTMLMediaElement>(null),sourceKey=useRef(restored?.file?fileKey(restored.file):'');
  const [modelId,setModelId]=useState(()=>{const id=loadSpeechPreferences('http://browser-whisper.local/').modelId;return id===browserHaasModel.id||browserWhisperModels.some(m=>m.id===id)?id:'tiny';}),[installed,setInstalled]=useState<Record<string,boolean>>({}),[working,setWorking]=useState(false),[installing,setInstalling]=useState(false),[message,setMessage]=useState(''),[error,setError]=useState('');
@@ -80,6 +80,7 @@ export function BrowserRecognition({active,onTransfer,onActivity,sourceControls}
   catch(error){finish('error');setError(String(error));}finally{setWorking(false);setDeleting('');setOperationModel('');}
  };
  const speed=(id:string)=>{const seconds=Number(job?.metadata?.runSeconds),length=Number(job?.rangeEnd??0)-Number(job?.rangeStart??0),engineId=id===browserHaasModel.id?'browser-haas':'browser-whisper',sameMode=id!==browserHaasModel.id||job?.metadata?.diarize===diarize;return job?.status==='complete'&&job.engine===engineId&&job.modelId===id&&sameMode&&(job.metadata?.executionDevice??'wasm')===deviceFor(id)&&seconds>0&&length>0?(length/seconds).toFixed(1)+'倍速':'未測定';};
+ useEffect(()=>{if(incomingMedia){player.current?.pause();load(incomingMedia);}},[incomingMedia]);
  const load=(selected:File)=>{if(working)return;if(!isRecognitionMediaName(selected.name)){setError('動画・音声を選択してください。');return;}setFile(selected);setUrl(URL.createObjectURL(selected));setError('');if(sourceKey.current!==fileKey(selected)){setJob(null);setSegments([]);}};
  const recognize=async()=>{
   const device=deviceFor(model.id);if(!file||working||(!haasSelected&&checkingGpu)||!installed[model.id+':'+device]||(haasSelected&&diarize&&!nemotronInstalled))return;let bounds;try{bounds=range.request();}catch(error){setError(String(error));return;}

@@ -29,6 +29,8 @@ export function EditorToolbar(props: {
   muteCount: number;
   onCuts: () => void;
   onMutes: () => void;
+  onRetranscribe: () => void;
+  retranscribeDisabled: boolean;
 }) {
   const { hasTranscript } = props;
   return <div className="editor-toolbar" role="toolbar" aria-label="編集操作">
@@ -51,6 +53,7 @@ export function EditorToolbar(props: {
         <button className="button ghost small" onClick={props.onCuts}><Scissors size={14}/>カット記録 {props.cutCount}</button>
         <button className="button ghost small" onClick={props.onMutes}>ミュート {props.muteCount}</button>
       </>}
+      <button className="button secondary" disabled={props.retranscribeDisabled} onClick={props.onRetranscribe}>再文字起こし</button>
       <SaveMenu stage={3} active={props.active} className="button primary"/>
     </div>
   </div>;
